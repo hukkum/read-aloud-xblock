@@ -1,0 +1,2 @@
+[xblock.v1]
+ptexblock = ptexblock.ptexblock:PTEXBlock
