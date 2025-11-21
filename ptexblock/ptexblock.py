@@ -4,393 +4,458 @@ import requests
 from web_fragments.fragment import Fragment
 from xblock.core import XBlock
 from xblock.fields import Scope, String, Float
-from xblock.fragment import Fragment
+
+
+HTML_TEMPLATE = """
+<div class="pte-read-aloud">
+  <style>
+    .pte-read-aloud {{
+      border: 1px solid #ddd;
+      padding: 16px;
+      border-radius: 4px;
+      font-family: Arial, sans-serif;
+    }}
+    .pte-read-aloud h3 {{
+      margin-top: 0;
+    }}
+    .pte-instructions {{
+      font-style: italic;
+      margin-bottom: 12px;
+    }}
+    .pte-media img {{
+      max-width: 100%;
+      margin-bottom: 12px;
+    }}
+    .pte-media audio {{
+      display: block;
+      margin-bottom: 12px;
+    }}
+    .pte-reference {{
+      background: #f9f9f9;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }}
+    .pte-controls button {{
+      margin-right: 8px;
+    }}
+    .pte-status {{
+      margin-top: 8px;
+      font-size: 0.9em;
+      color: #555;
+    }}
+    .pte-score-box {{
+      margin-top: 10px;
+      font-weight: bold;
+    }}
+    .pte-feedback h4 {{
+      margin-top: 16px;
+      margin-bottom: 8px;
+    }}
+    .pte-word-table {{
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 8px;
+    }}
+    .pte-word-table th,
+    .pte-word-table td {{
+      border: 1px solid #ccc;
+      padding: 4px 6px;
+      font-size: 0.85em;
+      text-align: left;
+    }}
+    .pte-word-table th {{
+      background: #f0f0f0;
+    }}
+  </style>
+
+  <h3>{title}</h3>
+  <p class="pte-instructions">{instructions}</p>
+
+  {media_block}
+
+  <div class="pte-reference">
+    <strong>Text to read:</strong>
+    <p>{reference_text}</p>
+  </div>
+
+  <div class="pte-controls">
+    <button type="button" class="pte-start">🎤 Start Recording</button>
+    <button type="button" class="pte-stop" disabled>⏹ Stop</button>
+  </div>
+
+  <div class="pte-status" id="pte-status">Ready.</div>
+
+  <div class="pte-score-box">
+    Last saved score:
+    <span id="pte-last-score">{last_score}</span> / 90
+  </div>
+
+  <div class="pte-feedback" id="pte-feedback" style="display:none;"></div>
+</div>
+"""
+
+
+JS_CODE = """
+function PTEXBlock(runtime, element) {
+    var startBtn    = element.querySelector('.pte-start');
+    var stopBtn     = element.querySelector('.pte-stop');
+    var statusEl    = element.querySelector('#pte-status');
+    var scoreEl     = element.querySelector('#pte-last-score');
+    var feedbackEl  = element.querySelector('#pte-feedback');
+
+    var handlerUrl  = runtime.handlerUrl(element, 'submit_audio');
+
+    var mediaRecorder = null;
+    var chunks = [];
+
+    function setStatus(text) {
+        if (statusEl) {
+            statusEl.textContent = text;
+        }
+    }
+
+    function setScore(score) {
+        if (scoreEl) {
+            scoreEl.textContent = score.toFixed(1);
+        }
+    }
+
+    function renderFeedback(feedback) {
+        if (!feedbackEl) {
+            return;
+        }
+        var html = '<h4>Detailed feedback</h4>';
+        html += '<ul>';
+        if (typeof feedback.pron_score !== 'undefined') {
+            html += '<li>Pronunciation: ' + feedback.pron_score.toFixed(1) + '</li>';
+        }
+        if (typeof feedback.accuracy !== 'undefined') {
+            html += '<li>Accuracy: ' + feedback.accuracy.toFixed(1) + '</li>';
+        }
+        if (typeof feedback.fluency !== 'undefined') {
+            html += '<li>Fluency: ' + feedback.fluency.toFixed(1) + '</li>';
+        }
+        if (typeof feedback.prosody !== 'undefined') {
+            html += '<li>Prosody: ' + feedback.prosody.toFixed(1) + '</li>';
+        }
+        if (typeof feedback.completeness !== 'undefined') {
+            html += '<li>Completeness: ' + feedback.completeness.toFixed(1) + '</li>';
+        }
+        html += '</ul>';
+
+        if (feedback.words && feedback.words.length) {
+            html += '<table class="pte-word-table">';
+            html += '<thead><tr><th>Word</th><th>Accuracy</th><th>Error</th></tr></thead><tbody>';
+            feedback.words.forEach(function (w) {
+                html += '<tr><td>' + w.word + '</td><td>' + w.accuracy + '</td><td>' + w.error + '</td></tr>';
+            });
+            html += '</tbody></table>';
+        }
+
+        feedbackEl.innerHTML = html;
+        feedbackEl.style.display = 'block';
+    }
+
+    function sendForScoring(b64Audio) {
+        setStatus('Uploading & scoring your answer...');
+
+        var payload = {
+            audio_base64: b64Audio
+        };
+
+        var headers = {
+            'Content-Type': 'application/json'
+        };
+
+        if (runtime && runtime.csrfToken) {
+            headers['X-CSRFToken'] = runtime.csrfToken;
+        }
+
+        fetch(handlerUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(payload)
+        })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function (data) {
+            if (data.status === 'ok') {
+                setStatus('Answer scored successfully.');
+                if (typeof data.score === 'number') {
+                    setScore(data.score);
+                }
+                if (data.feedback) {
+                    renderFeedback(data.feedback);
+                }
+            } else {
+                setStatus('Error: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(function (err) {
+            console.error('PTEXBlock error:', err);
+            setStatus('Network or server error while scoring.');
+        });
+    }
+
+    startBtn.addEventListener('click', function () {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setStatus('Microphone access is not supported in this browser.');
+            return;
+        }
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function (stream) {
+                chunks = [];
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = function (e) {
+                    if (e.data && e.data.size > 0) {
+                        chunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = function () {
+                    var blob = new Blob(chunks, { type: 'audio/webm' });
+                    var reader = new FileReader();
+                    reader.onloadend = function () {
+                        var result = reader.result || '';
+                        var base64 = result.split(',')[1];  // strip data:...;base64,
+                        if (!base64) {
+                            setStatus('Could not read recorded audio.');
+                            return;
+                        }
+                        sendForScoring(base64);
+                    };
+                    reader.readAsDataURL(blob);
+                };
+
+                mediaRecorder.start();
+                setStatus('Recording... speak now.');
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            })
+            .catch(function (err) {
+                console.error('Microphone error:', err);
+                setStatus('Could not access microphone: ' + err.message);
+            });
+    });
+
+    stopBtn.addEventListener('click', function () {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
+    });
+}
+"""
 
 
 class PTEXBlock(XBlock):
     """
-    PTE Read Aloud XBlock
-    - Student can record an answer and get AI feedback.
-    - Instructor can edit title / instructions / reference text in Studio.
+    PTE Read Aloud XBlock with:
+    - Studio-editable reference text, instructions, and optional image/audio prompt
+    - Backend scoring via external Flask API
+    - Gradebook score based on pronunciation score (0–90)
     """
 
-    # ---------- Instructor-editable content ----------
-    title = String(
+    # ------------------------
+    # Studio / content fields
+    # ------------------------
+    display_name = String(
+        display_name="Component Title",
         default="PTE Read Aloud Practice",
-        scope=Scope.content,
-        help="Title shown to the learner."
+        scope=Scope.settings,
+        help="Title shown to learners and in Studio."
     )
 
     instructions = String(
-        default=(
-            'Look at the text below. In 40 seconds, you must read this text aloud '
-            'as naturally and clearly as possible. You have 40 seconds to read aloud. '
-            'The microphone will stop after 3 seconds of silence!'
-        ),
+        display_name="Instructions",
+        default="Look at the text below. In 40 seconds, you must read this text aloud as naturally and clearly as possible. The microphone will stop after 3 seconds of silence.",
         scope=Scope.content,
-        help="Instructions displayed above the reference text."
+        help="Instructions shown above the text."
     )
 
     reference_text = String(
+        display_name="Reference Text",
         default="Globalization has significantly changed the modern economy.",
         scope=Scope.content,
-        help="The text the learner must read aloud."
+        help="Text the learner must read aloud."
     )
 
-    # Scoring API endpoint (override per course/site if needed)
+    prompt_image_url = String(
+        display_name="Prompt Image URL",
+        default="",
+        scope=Scope.content,
+        help="Optional image URL to show above the text (leave blank for no image)."
+    )
+
+    prompt_audio_url = String(
+        display_name="Prompt Audio URL",
+        default="",
+        scope=Scope.content,
+        help="Optional audio URL (e.g., sample answer). Leave blank for none."
+    )
+
     api_url = String(
+        display_name="Scoring API URL",
         default="http://127.0.0.1:5001/api/pte/read-aloud",
         scope=Scope.settings,
-        help="Backend API endpoint for pronunciation scoring."
+        help="Backend scoring API endpoint."
     )
 
-    # ---------- Per-learner state ----------
+    weight = Float(
+        display_name="Problem Weight",
+        default=1.0,
+        scope=Scope.settings,
+        help="Score weight for this problem in the course grade."
+    )
+
+    # ------------------------
+    # Learner state
+    # ------------------------
     student_score = Float(
         default=0.0,
         scope=Scope.user_state,
-        help="Latest pronunciation score for this learner."
+        help="Last saved pronunciation score (0–90)."
     )
-
     student_feedback = String(
         default="",
         scope=Scope.user_state,
-        help="Raw JSON feedback from the scoring API."
+        help="Raw JSON feedback from scoring API."
+    )
+    student_words = String(
+        default="[]",
+        scope=Scope.user_state,
+        help="Word-level feedback JSON."
     )
 
-    # ---------- Student view ----------
+    # This tells Studio / LMS it can be graded
+    has_score = True
+    icon_class = "problem"
+    editable_fields = (
+        "display_name",
+        "instructions",
+        "reference_text",
+        "prompt_image_url",
+        "prompt_audio_url",
+        "api_url",
+        "weight",
+    )
+
+    # ------------------------
+    # Views
+    # ------------------------
     def student_view(self, context=None):
         """
-        Main learner view: shows instructions, text, and record/stop controls.
+        Main learner view: shows title, instructions, optional media, text, and recorder UI.
         """
-        last_score_text = (
-            f"{self.student_score:.1f}"
-            if self.student_score and self.student_score > 0
-            else "No score yet"
+        media_parts = []
+        if self.prompt_image_url:
+            media_parts.append(
+                f'<div class="pte-media"><img src="{self.prompt_image_url}" '
+                f'alt="PTE prompt image" /></div>'
+            )
+        if self.prompt_audio_url:
+            media_parts.append(
+                '<div class="pte-media">'
+                f'<audio controls src="{self.prompt_audio_url}">'
+                'Your browser does not support the audio element.'
+                '</audio></div>'
+            )
+        media_block = "".join(media_parts)
+
+        last = f"{self.student_score:.1f}" if self.student_score else "0.0"
+
+        html = HTML_TEMPLATE.format(
+            title=self.display_name,
+            instructions=self.instructions,
+            reference_text=self.reference_text,
+            media_block=media_block,
+            last_score=last,
         )
 
-        html = f"""
-        <div class="pte-read-aloud" id="pte-read-aloud-{{id}}">
-          <h2>{self.title}</h2>
-          <p class="pte-instructions">{self.instructions}</p>
-
-          <p><strong>Read the following text aloud:</strong></p>
-          <div class="pte-reference-text">
-            {self.reference_text}
-          </div>
-
-          <div class="pte-controls">
-            <button class="pte-start">🎤 Start Recording</button>
-            <button class="pte-stop" disabled>⏹ Stop</button>
-          </div>
-
-          <p class="pte-status">Press "Start Recording" to begin.</p>
-
-          <div class="pte-last-score">
-            <strong>Last saved score:</strong> <span class="pte-last-score-value">{last_score_text}</span>
-          </div>
-
-          <pre class="pte-debug-log" style="display:none;"></pre>
-        </div>
-        """
-
         frag = Fragment(html)
-        frag.add_javascript(self._student_js())
-        frag.add_css(self._student_css())
-        frag.initialize_js('PTEXBlockStudent')
+        frag.add_javascript(JS_CODE)
+        frag.initialize_js("PTEXBlock")
         return frag
 
-    # ---------- Student JS/CSS (inline to avoid packaging issues) ----------
-    def _student_js(self):
-        """
-        Inline JavaScript for the student view.
-        Uses MediaRecorder to capture audio and send it as base64 to submit_audio handler.
-        """
-        return r"""
-        function PTEXBlockStudent(runtime, element) {
-            var $element = $(element);
-            var startBtn = $element.find('.pte-start');
-            var stopBtn = $element.find('.pte-stop');
-            var statusEl = $element.find('.pte-status');
-            var lastScoreEl = $element.find('.pte-last-score-value');
-            var debugLog = $element.find('.pte-debug-log');
-
-            var mediaRecorder = null;
-            var chunks = [];
-
-            function logDebug(msg, obj) {
-                console.log("PTEXBlock:", msg, obj || "");
-                var existing = debugLog.text();
-                debugLog.text(existing + "\n" + msg + (obj ? (" " + JSON.stringify(obj)) : ""));
-            }
-
-            function setStatus(text) {
-                statusEl.text(text);
-            }
-
-            function enableRecording(enabled) {
-                startBtn.prop('disabled', !enabled);
-                stopBtn.prop('disabled', enabled);
-            }
-
-            startBtn.on('click', function() {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    setStatus("Your browser does not support audio recording.");
-                    return;
-                }
-
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(function(stream) {
-                        mediaRecorder = new MediaRecorder(stream);
-                        chunks = [];
-
-                        mediaRecorder.ondataavailable = function(e) {
-                            if (e.data && e.data.size > 0) {
-                                chunks.push(e.data);
-                            }
-                        };
-
-                        mediaRecorder.onstop = function() {
-                            setStatus("Uploading & scoring your answer...");
-                            var blob = new Blob(chunks, { type: 'audio/webm' });
-
-                            var reader = new FileReader();
-                            reader.onloadend = function() {
-                                var base64data = reader.result.split(',')[1]; // strip data URL prefix
-                                sendToServer(base64data);
-                            };
-                            reader.readAsDataURL(blob);
-                        };
-
-                        mediaRecorder.start();
-                        enableRecording(false);
-                        setStatus("Recording... Speak now.");
-                    })
-                    .catch(function(err) {
-                        console.error("getUserMedia error:", err);
-                        setStatus("Could not access microphone: " + err.message);
-                    });
-            });
-
-            stopBtn.on('click', function() {
-                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                    mediaRecorder.stop();
-                    enableRecording(true);
-                    setStatus("Processing your answer...");
-                }
-            });
-
-            function sendToServer(audioBase64) {
-                var handlerUrl = runtime.handlerUrl(element, 'submit_audio');
-                logDebug("Sending audio to handler...", { url: handlerUrl });
-
-                $.ajax({
-                    type: "POST",
-                    url: handlerUrl,
-                    data: JSON.stringify({ audio_base64: audioBase64 }),
-                    contentType: "application/json",
-                }).done(function(response) {
-                    logDebug("API response:", response);
-
-                    if (response.status === "ok") {
-                        setStatus("Answer successfully submitted and scored.");
-                        if (response.score !== undefined && response.score !== null) {
-                            lastScoreEl.text(response.score.toFixed(1));
-                        }
-                    } else {
-                        setStatus("Error: " + (response.message || "Unknown error"));
-                    }
-                }).fail(function(jqXHR, textStatus, errorThrown) {
-                    console.error("AJAX error:", textStatus, errorThrown);
-                    setStatus("Network/Server error while scoring your answer.");
-                });
-            }
-        }
-        """
-
-    def _student_css(self):
-        """
-        Minimal CSS to keep things readable.
-        """
-        return r"""
-        .pte-read-aloud {
-            border: 1px solid #ddd;
-            padding: 16px;
-            border-radius: 4px;
-            margin: 10px 0;
-        }
-        .pte-reference-text {
-            border: 1px dashed #ccc;
-            padding: 8px;
-            margin-bottom: 12px;
-            background: #fafafa;
-        }
-        .pte-controls button {
-            margin-right: 8px;
-        }
-        .pte-status {
-            margin-top: 8px;
-            font-style: italic;
-        }
-        .pte-last-score {
-            margin-top: 10px;
-        }
-        """
-
-    # ---------- Handler called by JS ----------
+    # ------------------------
+    # JSON handler called from JS
+    # ------------------------
     @XBlock.json_handler
-    def submit_audio(self, data, suffix=''):
+    def submit_audio(self, data, suffix=""):
         """
-        Receives base64 audio from JS, sends it to the scoring API, stores score.
+        Receives base64-encoded audio from browser, calls scoring API, stores score.
         """
-        audio_b64 = data.get("audio_base64")
-        if not audio_b64:
-            return {"status": "error", "message": "No audio provided"}
-
-        payload = {
-            "reference_text": self.reference_text,
-            "audio_base64": audio_b64,
-        }
-
         try:
-            resp = requests.post(
-                self.api_url,
-                json=payload,
-                timeout=30
-            )
-        except Exception as e:
-            return {"status": "error", "message": f"Backend API error: {e}"}
+            audio_b64 = data.get("audio_base64")
+            if not audio_b64:
+                return {"status": "error", "message": "No audio data received"}
 
-        try:
-            result = resp.json()
-        except Exception:
-            return {
-                "status": "error",
-                "message": f"Invalid JSON from backend (status {resp.status_code})",
+            payload = {
+                "reference_text": self.reference_text,
+                "audio_base64": audio_b64,
             }
 
-        if "error" in result:
-            return {"status": "error", "message": result.get("error", "Unknown error")}
+            resp = requests.post(self.api_url, json=payload, timeout=25)
+            resp.raise_for_status()
+            backend = resp.json()
 
-        # Save learner state
-        pron_score = float(result.get("pron_score", 0.0))
-        self.student_score = pron_score
-        self.student_feedback = json.dumps(result)
+            if "error" in backend:
+                return {"status": "error", "message": backend.get("error")}
 
-        return {
-            "status": "ok",
-            "score": pron_score,
-            "feedback": result,
-        }
+            pron = backend.get("pron_score") or backend.get("score") or 0.0
 
-    # ---------- Gradebook hooks (we'll refine later) ----------
+            # Persist to learner state
+            self.student_score = float(pron)
+            self.student_feedback = json.dumps(backend)
+            self.student_words = json.dumps(backend.get("words", []))
+
+            return {
+                "status": "ok",
+                "score": float(pron),
+                "feedback": backend,
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # ------------------------
+    # Grading hooks
+    # ------------------------
     def max_score(self):
-        # PTE is out of 90; for now we just mirror that conceptually.
+        """
+        Max PTE-style score (0–90). LMS uses this as the full mark.
+        """
         return 90.0
 
     def get_score(self):
-        # LMS will use this when grading the problem.
-        return float(self.student_score or 0.0)
-
-    # ---------- Studio authoring view ----------
-    def studio_view(self, context=None):
         """
-        Simple Studio editor to let instructors edit title, instructions, and reference text.
+        Return learner's current numeric score.
         """
-        html = f"""
-        <div class="pte-studio-editor">
-          <div class="field">
-            <label>Title</label><br/>
-            <input type="text" name="title" value="{self.title}" style="width: 100%;" />
-          </div>
+        return float(self.student_score)
 
-          <div class="field" style="margin-top: 10px;">
-            <label>Instructions</label><br/>
-            <textarea name="instructions" rows="3" style="width: 100%;">{self.instructions}</textarea>
-          </div>
-
-          <div class="field" style="margin-top: 10px;">
-            <label>Reference text</label><br/>
-            <textarea name="reference_text" rows="6" style="width: 100%;">{self.reference_text}</textarea>
-          </div>
-
-          <div class="actions" style="margin-top: 15px;">
-            <button class="btn btn-primary save-button">Save</button>
-            <button class="btn cancel-button">Cancel</button>
-          </div>
-        </div>
+    def set_score(self, score):
         """
-
-        frag = Fragment(html)
-        frag.add_javascript(self._studio_js())
-        frag.initialize_js('PTEXBlockStudio')
-        return frag
-
-    def _studio_js(self):
+        (Optional) Allow LMS or overrides to set the score manually.
         """
-        Inline JS for Studio editor (save/cancel, calls studio_submit handler).
-        """
-        return r"""
-        function PTEXBlockStudio(runtime, element) {
-            var $element = $(element);
+        self.student_score = float(score)
 
-            var $title = $element.find('input[name=title]');
-            var $instructions = $element.find('textarea[name=instructions]');
-            var $reference = $element.find('textarea[name=reference_text]');
-
-            var saveBtn = $element.find('.save-button');
-            var cancelBtn = $element.find('.cancel-button');
-
-            var handlerUrl = runtime.handlerUrl(element, 'studio_submit');
-
-            saveBtn.on('click', function (e) {
-                e.preventDefault();
-
-                var data = {
-                    title: $title.val(),
-                    instructions: $instructions.val(),
-                    reference_text: $reference.val()
-                };
-
-                runtime.notify('save', {state: 'start'});
-
-                $.ajax({
-                    type: "POST",
-                    url: handlerUrl,
-                    data: JSON.stringify(data),
-                    contentType: "application/json"
-                }).done(function (response) {
-                    runtime.notify('save', {state: 'end'});
-                }).fail(function () {
-                    runtime.notify('error', {
-                        msg: "Error saving settings."
-                    });
-                });
-            });
-
-            cancelBtn.on('click', function (e) {
-                e.preventDefault();
-                runtime.notify('cancel', {});
-            });
-        }
-        """
-
-    @XBlock.json_handler
-    def studio_submit(self, data, suffix=''):
-        """
-        Save changes from Studio editor.
-        """
-        self.title = data.get('title', self.title)
-        self.instructions = data.get('instructions', self.instructions)
-        self.reference_text = data.get('reference_text', self.reference_text)
-        return {"result": "success"}
-
-    # ---------- Workbench scenario for the SDK ----------
+    # ------------------------
+    # Workbench scenario (for SDK only)
+    # ------------------------
     @staticmethod
     def workbench_scenarios():
         """
-        So it shows up as <ptexblock/> in the SDK.
+        Simple scenario so it appears in the xblock-sdk workbench.
         """
         return [
-            ("PTE Read Aloud simple scenario",
+            ("PTE Read Aloud Inline",
              "<ptexblock/>"),
         ]
