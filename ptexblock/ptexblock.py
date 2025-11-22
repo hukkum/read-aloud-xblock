@@ -7,28 +7,28 @@ PTE Read Aloud XBlock (single-question version).
 - Exposes a simple numeric score that can be mapped to course grading
 """
 
-from xblock.core import XBlock
-from xblock.fields import Scope, String, Float, Boolean
 import json
 import requests
 import pkg_resources
-from web_fragments.fragment import Fragment
-from xblockutils.studio_editable import StudioEditableXBlockMixin
+
+from xblock.core import XBlock
+from xblock.fields import Scope, String, Float
+from xblock.fragment import Fragment
+from xblock.utils.studio_editable import StudioEditableXBlockMixin
 
 
 # ---------------------------------------------------------------------------
-# Resource loader (FIXED: back to pkg_resources, relative to this module)
+# Resource loader
 # ---------------------------------------------------------------------------
 
 def _resource_string(path: str) -> str:
     """
     Load a text resource from this XBlock package.
 
-    Path is relative to the *module* package, so:
+    Path is relative to this module, e.g.:
       "static/html/ptexblock.html"
       "static/css/ptexblock.css"
       "static/js/src/ptexblock.js"
-    are all under ptexblock/ptexblock/.
     """
     data = pkg_resources.resource_string(__name__, path)
     return data.decode("utf-8")
@@ -42,26 +42,26 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     """
     Single PTE Read-Aloud style question.
 
-    The template (ptexblock.html) expects these attributes:
-      - self.display_name or self.title
+    The student template (ptexblock.html) expects:
+      - self.title / self.display_name
       - self.instructions
       - self.reference_text
       - self.student_score
     """
 
-    icon_class = "problem"     # Shows as a "problem" in Studio
-    has_score = True           # LMS knows this block can produce a score
+    icon_class = "problem"   # shows as problem icon in Studio
+    has_score = True         # LMS knows this block can produce a score
 
-    # These fields will appear in the Studio edit modal provided by
-    # StudioEditableXBlockMixin.
+    # Which fields are editable in Studio (via StudioEditableXBlockMixin)
     editable_fields = (
         "display_name",
         "instructions",
         "reference_text",
         "api_url",
+        "weight",
     )
 
-    # ----- Instructor / author settings (Studio "Settings" form) -------------
+    # ----- Instructor / author settings -------------------------------------
 
     display_name = String(
         display_name="Component title",
@@ -79,6 +79,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         ),
         scope=Scope.content,
         help="High-level instructions shown to learners.",
+        multiline_editor=True,
     )
 
     reference_text = String(
@@ -86,6 +87,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         default="Globalization has significantly changed the modern economy.",
         scope=Scope.content,
         help="Text the learner should read aloud.",
+        multiline_editor=True,
     )
 
     api_url = String(
@@ -102,7 +104,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         help="Maximum score this question contributes to the course grade.",
     )
 
-    # ----- Per-student state --------------------------------------------------
+    # ----- Per-student state -------------------------------------------------
 
     student_score = Float(
         default=0.0,
@@ -122,7 +124,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         help="Word-level details as a JSON list.",
     )
 
-    # ----- Compatibility helpers ---------------------------------------------
+    # ----- Compatibility helpers --------------------------------------------
 
     @property
     def title(self):
@@ -131,7 +133,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         """
         return self.display_name
 
-    # ----- Views --------------------------------------------------------------
+    # ----- Views -------------------------------------------------------------
 
     def student_view(self, context=None):
         """
@@ -142,12 +144,17 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         frag = Fragment(html)
         frag.add_css(_resource_string("static/css/ptexblock.css"))
         frag.add_javascript(_resource_string("static/js/src/ptexblock.js"))
-        frag.initialize_js('PTEXBlock')
+        frag.initialize_js("PTEXBlock")
         return frag
 
-    # We do NOT override studio_view now. StudioEditableXBlockMixin will
-    # supply a standard edit modal that lets you edit display_name,
-    # instructions, reference_text, and api_url.
+    def author_view(self, context=None):
+        """
+        Studio preview view.
+
+        For now we just reuse the student view so authors see
+        exactly what learners will see (plus Studio's chrome).
+        """
+        return self.student_view(context)
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -158,7 +165,8 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         and persist last score + feedback.
 
         Supports two backend response shapes:
-        1) Flat PTE-style metrics (what you have now):
+
+        A) Flat PTE-style metrics (your current backend):
            {
                "accuracy": ...,
                "completeness": ...,
@@ -168,7 +176,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
                "words": [...]
            }
 
-        2) Old style:
+        B) Older shape:
            {
                "status": "ok",
                "score": ...,
@@ -184,7 +192,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
         payload = {
             # For “recorder-only” mode you can leave reference_text blank;
-            # backend can just ignore it.
+            # backend can ignore it if it wants.
             "reference_text": self.reference_text or "",
             "audio_base64": audio_base64,
         }
@@ -216,7 +224,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         feedback = {}
         pron_score = 0.0
 
-        # --- Case A: your current backend (flat metrics) ----------------------
+        # --- Case A: flat metrics (preferred) --------------------------------
         if any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
@@ -231,7 +239,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             }
             pron_score = feedback.get("pron_score") or 0.0
 
-        # --- Case B: older shape with status/score/feedback -------------------
+        # --- Case B: status/score/feedback wrapper ---------------------------
         else:
             api_status = result.get("status")
             if api_status not in (None, "ok"):
@@ -267,16 +275,13 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         self.student_feedback = json.dumps(feedback)
         self.student_words = json.dumps(feedback.get("words") or [])
 
-        # Optionally, later we can publish grade here for LMS gradebook
-        # (we keep it off in workbench to avoid surprises).
-
         return {
             "status": "ok",
             "score": self.student_score,
             "feedback": feedback,
         }
 
-    # ----- Grading hooks ------------------------------------------------------
+    # ----- Grading hooks -----------------------------------------------------
 
     def max_score(self):
         return float(self.weight or 1.0)
@@ -288,7 +293,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         raw = float(self.student_score or 0.0)
         return (raw / 90.0) * self.max_score()
 
-    # ----- Workbench scenarios -----------------------------------------------
+    # ----- Workbench scenarios ----------------------------------------------
 
     @staticmethod
     def workbench_scenarios():
