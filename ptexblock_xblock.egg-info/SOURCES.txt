@@ -4,9 +4,8 @@ ptexblock/ptexblock.py
 ptexblock/static/README.txt
 ptexblock/static/css/ptexblock.css
 ptexblock/static/html/ptexblock.html
-ptexblock/static/html/ptexblock_edit.html
+ptexblock/static/html/ptexblock_studio.html
 ptexblock/static/js/src/ptexblock.js
-ptexblock/static/js/src/ptexblock_edit.js
 ptexblock/translations/README.txt
 ptexblock_xblock.egg-info/PKG-INFO
 ptexblock_xblock.egg-info/SOURCES.txt

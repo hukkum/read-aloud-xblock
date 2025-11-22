@@ -5,3 +5,8 @@
 .pte-start, .pte-stop {
     margin-right: 10px;
 }
+
+/* Studio-specific */
+.pte-studio .pte-field {
+    margin-bottom: 10px;
+}

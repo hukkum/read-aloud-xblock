@@ -266,7 +266,39 @@ class PTEXBlock(XBlock):
             "score": self.student_score,
             "feedback": feedback,
         }
+    @XBlock.json_handler
+    def save_studio_settings(self, data, suffix=''):
+        """
+        Called from Studio to save edited settings.
+        """
+        try:
+            # These keys must match what we send from JS
+            display_name = data.get('display_name', '').strip()
+            instructions = data.get('instructions', '').strip()
+            reference_text = data.get('reference_text', '').strip()
+            api_url = data.get('api_url', '').strip()
 
+            if display_name:
+                self.display_name = display_name
+            if instructions:
+                self.instructions = instructions
+            if reference_text:
+                self.reference_text = reference_text
+            if api_url:
+                self.api_url = api_url
+
+            return {
+                "status": "ok",
+                "display_name": self.display_name,
+                "instructions": self.instructions,
+                "reference_text": self.reference_text,
+                "api_url": self.api_url,
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "message": "Failed to save settings: {}".format(exc),
+            }
 
 
     # ----- Grading hooks ------------------------------------------------------
@@ -306,25 +338,14 @@ class PTEXBlock(XBlock):
     
     def studio_view(self, context=None):
         """
-        Simple Studio view placeholder – shows the settings currently stored.
-        In real Studio, you’d build a form + JS to edit these.
+        Studio authoring view: simple form to edit title, instructions,
+        reference text, and API URL. Works in both SDK and real Studio.
         """
-        html = u"""
-            <div class="pte-container">
-                <h2>Studio view for PTE Read Aloud</h2>
-                <p><strong>Title:</strong> {title}</p>
-                <p><strong>Instructions:</strong> {instructions}</p>
-                <p><strong>Reference text:</strong> {reference_text}</p>
-                <p><em>(Editing UI to come later – this is just to verify Studio view works.)</em></p>
-            </div>
-        """.format(
-            title=self.title,
-            instructions=self.instructions,
-            reference_text=self.reference_text,
-        )
-
+        html = _resource_string("static/html/ptexblock_studio.html").format(self=self)
         frag = Fragment(html)
         frag.add_css(_resource_string("static/css/ptexblock.css"))
+        frag.add_javascript(_resource_string("static/js/src/ptexblock.js"))
+        frag.initialize_js('PTEXBlockStudio')
         return frag
 
 

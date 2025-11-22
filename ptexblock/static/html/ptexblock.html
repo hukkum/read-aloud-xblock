@@ -1,27 +1,94 @@
 <div class="pte-read-aloud-block">
-  <h2 class="pte-title">{self.title}</h2>
+  <!-- Title / display name -->
+  <h2 class="pte-title">
+    {self.display_name}
+  </h2>
 
+  <!-- Instructions -->
   <p class="pte-instructions">
     {self.instructions}
   </p>
 
+  <!-- Reference text -->
   <p><strong>Read the following text aloud:</strong></p>
   <p class="pte-reference-text">{self.reference_text}</p>
 
+  <!-- Recorder controls -->
   <div class="pte-recorder">
-    <button class="pte-start">🎤 Start Recording</button>
-    <button class="pte-stop" disabled>⏹ Stop</button>
+    <button type="button" class="pte-start">🎤 Start Recording</button>
+    <button type="button" class="pte-stop" disabled>⏹ Stop</button>
   </div>
 
+  <!-- Status line -->
   <div class="pte-status">
-    <span class="pte-status-message">
+    <span id="pte-status" class="pte-status-message">
       Click "Start Recording" to begin.
     </span>
   </div>
 
+  <!-- Last saved score -->
   <div class="pte-last-score">
-    Last saved pronunciation score (0–90): <span class="pte-score-value">
+    Last saved pronunciation score (0–90):
+    <span id="pte-last-score" class="pte-score-value">
       {self.student_score}
     </span>
+  </div>
+
+  <!-- Feedback panel (hidden until first score) -->
+  <div id="pte-feedback" style="display:none; margin-top: 16px;">
+    <h3>PTE-style AI Feedback</h3>
+
+    <!-- PTE 3-criterion summary -->
+    <table class="pte-summary-table" style="margin-bottom: 10px;">
+      <tr><th>Criterion</th><th>Score (0–90)</th></tr>
+      <tr>
+        <td>Content</td>
+        <td id="pte-summary-content">–</td>
+      </tr>
+      <tr>
+        <td>Oral fluency</td>
+        <td id="pte-summary-fluency-main">–</td>
+      </tr>
+      <tr>
+        <td>Pronunciation</td>
+        <td id="pte-summary-pron-main">–</td>
+      </tr>
+    </table>
+
+    <!-- Short explanation of PTE scoring -->
+    <div class="pte-explainer" style="font-size: 0.9em; margin-bottom: 14px;">
+      <p><strong>PTE Read Aloud is scored on three criteria:</strong> content, oral fluency, and pronunciation.</p>
+      <ul>
+        <li><strong>Content</strong>: You are rewarded for reading the text exactly as written. Omitting, adding, or replacing words lowers this score.</li>
+        <li><strong>Oral fluency</strong>: Measures how smooth and natural your speech is. Hesitations, repetitions, and false starts reduce this score.</li>
+        <li><strong>Pronunciation</strong>: Measures how clear and understandable your speech is to a native speaker. You don’t need a native accent, but your speech must be easy to understand.</li>
+      </ul>
+    </div>
+
+    <!-- Detailed metrics from backend -->
+    <h4>Detailed metrics</h4>
+    <table class="pte-summary-table" style="margin-bottom: 10px;">
+      <tr><th>Metric</th><th>Score</th></tr>
+      <tr><td>Pronunciation (overall)</td><td id="pte-summary-pron">–</td></tr>
+      <tr><td>Accuracy</td><td id="pte-summary-accuracy">–</td></tr>
+      <tr><td>Fluency</td><td id="pte-summary-fluency">–</td></tr>
+      <tr><td>Prosody</td><td id="pte-summary-prosody">–</td></tr>
+      <tr><td>Completeness</td><td id="pte-summary-completeness">–</td></tr>
+    </table>
+
+    <!-- Word-level feedback -->
+    <h4>Word-by-word feedback</h4>
+    <table id="pte-words-table" class="pte-summary-table">
+      <thead>
+        <tr>
+          <th>Word</th>
+          <th>Accuracy</th>
+          <th>Error type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Filled by JS -->
+      </tbody>
+    </table>
   </div>
 </div>
