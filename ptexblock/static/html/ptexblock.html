@@ -1,69 +1,27 @@
-<div class="pte-block">
+<div class="pte-read-aloud-block">
   <h2 class="pte-title">{self.title}</h2>
 
   <p class="pte-instructions">
     {self.instructions}
   </p>
 
-  <div class="pte-reference">
-    <strong>Read the following text aloud:</strong>
-    <p class="pte-reference-text">{self.reference_text}</p>
-  </div>
+  <p><strong>Read the following text aloud:</strong></p>
+  <p class="pte-reference-text">{self.reference_text}</p>
 
   <div class="pte-recorder">
-    <button type="button" class="pte-btn pte-start">🎤 Start Recording</button>
-    <button type="button" class="pte-btn pte-stop" disabled>⏹ Stop</button>
+    <button class="pte-start">🎤 Start Recording</button>
+    <button class="pte-stop" disabled>⏹ Stop</button>
   </div>
 
-  <div class="pte-status" id="pte-status">
-    Click "Start Recording" to begin.
+  <div class="pte-status">
+    <span class="pte-status-message">
+      Click "Start Recording" to begin.
+    </span>
   </div>
 
   <div class="pte-last-score">
-    <strong>Last saved pronunciation score (0–90):</strong>
-    <span id="pte-last-score">{self.student_score}</span>
-  </div>
-
-  <div class="pte-feedback" id="pte-feedback" style="display: none;">
-    <h3>AI Feedback</h3>
-
-    <table class="pte-summary">
-      <tbody>
-        <tr>
-          <th>Pronunciation (0–90)</th>
-          <td id="pte-summary-pron">–</td>
-        </tr>
-        <tr>
-          <th>Accuracy</th>
-          <td id="pte-summary-accuracy">–</td>
-        </tr>
-        <tr>
-          <th>Fluency</th>
-          <td id="pte-summary-fluency">–</td>
-        </tr>
-        <tr>
-          <th>Prosody</th>
-          <td id="pte-summary-prosody">–</td>
-        </tr>
-        <tr>
-          <th>Completeness (partial credit)</th>
-          <td id="pte-summary-completeness">–</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h4>Word-level details</h4>
-    <table class="pte-words" id="pte-words-table">
-      <thead>
-        <tr>
-          <th>Word</th>
-          <th>Accuracy</th>
-          <th>Issue</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Filled by JS -->
-      </tbody>
-    </table>
+    Last saved pronunciation score (0–90): <span class="pte-score-value">
+      {self.student_score}
+    </span>
   </div>
 </div>

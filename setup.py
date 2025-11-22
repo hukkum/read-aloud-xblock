@@ -11,7 +11,7 @@ def package_data(pkg, roots):
 
 setup(
     name='ptexblock-xblock',
-    version='0.3',
+    version='0.4',
     description='Minimal PTE XBlock',
     packages=['ptexblock'],
     entry_points={
@@ -22,3 +22,4 @@ setup(
     package_data=package_data("ptexblock", ["static", "public", "templates"]),
     include_package_data=True,
 )
+ 

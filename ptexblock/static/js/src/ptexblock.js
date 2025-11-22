@@ -1,19 +1,44 @@
 function PTEXBlock(runtime, element) {
-    var $element = $(element);
+    var $root = $(element);
 
-    var $startBtn = $element.find('.pte-start');
-    var $stopBtn = $element.find('.pte-stop');
-    var $status = $element.find('#pte-status');
-    var $lastScore = $element.find('#pte-last-score');
-    var $feedbackBox = $element.find('#pte-feedback');
-    var $wordsBody = $element.find('#pte-words-table tbody');
+    // Buttons
+    var $startBtn = $root.find('.pte-start');
+    var $stopBtn = $root.find('.pte-stop');
+
+    // Status / score (support both old IDs and new classes)
+    var $status = $root.find('.pte-status-message, #pte-status');
+    var $scoreSpan = $root.find('.pte-score-value, #pte-last-score');
+
+    // Feedback container (can be hidden by default)
+    var $feedbackBox = $root.find('.pte-feedback, #pte-feedback');
+    var $wordsBody  = $root.find('.pte-words-table tbody, #pte-words-table tbody');
+
+    // Summary cells (support both class and id patterns)
+    var $summaryPron         = $root.find('.pte-summary-pron, #pte-summary-pron');
+    var $summaryAccuracy     = $root.find('.pte-summary-accuracy, #pte-summary-accuracy');
+    var $summaryFluency      = $root.find('.pte-summary-fluency, #pte-summary-fluency');
+    var $summaryProsody      = $root.find('.pte-summary-prosody, #pte-summary-prosody');
+    var $summaryCompleteness = $root.find('.pte-summary-completeness, #pte-summary-completeness');
 
     var mediaRecorder = null;
     var recordedChunks = [];
     var stream = null;
 
     function setStatus(text) {
-        $status.text(text);
+        if ($status.length) {
+            $status.text(text);
+        }
+    }
+
+    function setLastScore(score) {
+        if (!$scoreSpan.length) {
+            return;
+        }
+        if (typeof score === "number") {
+            $scoreSpan.text(score.toFixed(1));
+        } else {
+            $scoreSpan.text(score);
+        }
     }
 
     function resetRecording() {
@@ -43,13 +68,11 @@ function PTEXBlock(runtime, element) {
                 };
 
                 mediaRecorder.onstop = function () {
-                    // Combine chunks into a Blob
                     var blob = new Blob(recordedChunks, { type: 'audio/webm' });
                     var reader = new FileReader();
 
                     reader.onloadend = function () {
-                        // This is a data URL: "data:audio/webm;base64,AAAA..."
-                        var dataUrl = reader.result;
+                        var dataUrl = reader.result;  // "data:audio/webm;base64,AAAA..."
                         sendForScoring(dataUrl);
                     };
 
@@ -68,7 +91,7 @@ function PTEXBlock(runtime, element) {
             })
             .catch(function (err) {
                 console.error("getUserMedia error:", err);
-                setStatus("Unable to access microphone: " + err.message);
+                setStatus("Unable to access microphone: " + (err && err.message ? err.message : err));
             });
     }
 
@@ -96,57 +119,60 @@ function PTEXBlock(runtime, element) {
                 console.log("API response:", response);
 
                 if (!response || response.status !== "ok") {
-                    setStatus("Error: " + (response && response.message ? response.message : "Unknown error"));
+                    var msg = (response && response.message) ? response.message : "Unknown error";
+                    setStatus("Error scoring your answer: " + msg);
                     return;
                 }
 
                 setStatus("Answer submitted and scored. You can retry to improve your score.");
 
+                // Overall score (0–90) – from response.score
                 var score = response.score || 0;
-                if (typeof score === "number") {
-                    $lastScore.text(score.toFixed(1));
-                } else {
-                    $lastScore.text(score);
-                }
+                setLastScore(score);
 
+                // Detailed feedback from backend
                 var fb = response.feedback || {};
-                $feedbackBox.show();
+                if ($feedbackBox.length) {
+                    $feedbackBox.show();
+                }
 
                 // Overall metrics
                 var pron = fb.pron_score;
-                var acc = fb.accuracy;
-                var flu = fb.fluency;
-                var pro = fb.prosody;
+                var acc  = fb.accuracy;
+                var flu  = fb.fluency;
+                var pro  = fb.prosody;
                 var comp = fb.completeness;
 
-                $element.find('#pte-summary-pron').text(
-                    (typeof pron === "number") ? pron.toFixed(1) : '–'
-                );
-                $element.find('#pte-summary-accuracy').text(
-                    (typeof acc === "number") ? acc.toFixed(1) : '–'
-                );
-                $element.find('#pte-summary-fluency').text(
-                    (typeof flu === "number") ? flu.toFixed(1) : '–'
-                );
-                $element.find('#pte-summary-prosody').text(
-                    (typeof pro === "number") ? pro.toFixed(1) : '–'
-                );
-                $element.find('#pte-summary-completeness').text(
-                    (typeof comp === "number") ? comp.toFixed(1) : '–'
-                );
+                if ($summaryPron.length) {
+                    $summaryPron.text(typeof pron === "number" ? pron.toFixed(1) : '–');
+                }
+                if ($summaryAccuracy.length) {
+                    $summaryAccuracy.text(typeof acc === "number" ? acc.toFixed(1) : '–');
+                }
+                if ($summaryFluency.length) {
+                    $summaryFluency.text(typeof flu === "number" ? flu.toFixed(1) : '–');
+                }
+                if ($summaryProsody.length) {
+                    $summaryProsody.text(typeof pro === "number" ? pro.toFixed(1) : '–');
+                }
+                if ($summaryCompleteness.length) {
+                    $summaryCompleteness.text(typeof comp === "number" ? comp.toFixed(1) : '–');
+                }
 
                 // Word-level details
-                $wordsBody.empty();
-                if (Array.isArray(fb.words)) {
-                    fb.words.forEach(function (w) {
-                        var $row = $('<tr></tr>');
-                        $('<td></td>').text(w.word || '').appendTo($row);
-                        $('<td></td>').text(
-                            (typeof w.accuracy === "number") ? w.accuracy : ''
-                        ).appendTo($row);
-                        $('<td></td>').text(w.error || '').appendTo($row);
-                        $wordsBody.append($row);
-                    });
+                if ($wordsBody.length) {
+                    $wordsBody.empty();
+                    if (Array.isArray(fb.words)) {
+                        fb.words.forEach(function (w) {
+                            var $row = $('<tr></tr>');
+                            $('<td></td>').text(w.word || '').appendTo($row);
+                            $('<td></td>').text(
+                                (typeof w.accuracy === "number") ? w.accuracy : ''
+                            ).appendTo($row);
+                            $('<td></td>').text(w.error || '').appendTo($row);
+                            $wordsBody.append($row);
+                        });
+                    }
                 }
             },
             error: function (xhr, status, errorThrown) {
