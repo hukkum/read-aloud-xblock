@@ -8,8 +8,10 @@ PTE Read Aloud XBlock (single-question version).
 """
 
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Float, Boolean
+from xblock.fields import Scope, String, Float
 from xblock.fragment import Fragment
+from xblockutils.studio_editable import StudioEditableXBlockMixin
+
 import json
 import requests
 import pkg_resources
@@ -36,7 +38,7 @@ def _resource_string(path: str) -> str:
 # Main XBlock
 # ---------------------------------------------------------------------------
 
-class PTEXBlock(XBlock):
+class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     """
     Single PTE Read-Aloud style question.
 
@@ -50,15 +52,23 @@ class PTEXBlock(XBlock):
     icon_class = "problem"     # Shows as a "problem" in Studio
     has_score = True           # LMS knows this block can produce a score
 
-    # IMPORTANT: tell Studio/LMS that we *do* have an author_view
-    # (used by Studio preview; will just call student_view below).
+    # Tell Studio that we have an author_view it should call in preview.
     has_author_view = True
+
+    # Fields that Studio should make editable in the (legacy) editor.
+    editable_fields = (
+        "display_name",
+        "instructions",
+        "reference_text",
+        "api_url",
+        "weight",
+    )
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice v0.12",
+        default="PTE Read Aloud Practice",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -140,15 +150,14 @@ class PTEXBlock(XBlock):
 
     def author_view(self, context=None):
         """
-        Studio *preview* view.
-
-        We just reuse the student_view so authors see exactly what learners see.
+        Studio preview view. We just reuse the student_view so authors see
+        exactly what learners see.
         """
         return self.student_view(context)
 
-    # NOTE: no custom studio_view here.
-    # Studio's "Edit" dialog will use the default field editor for the XBlock
-    # fields (display_name, instructions, reference_text, api_url, etc.).
+    # NOTE: no custom studio_view or studio_submit here.
+    # StudioEditableXBlockMixin provides those and wires up the generic
+    # field editor UI, similar to the Google Calendar XBlock.
 
     # ----- JSON handler: called from JS after recording ----------------------
 
