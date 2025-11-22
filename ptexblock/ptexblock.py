@@ -8,15 +8,15 @@ PTE Read Aloud XBlock (single-question version).
 """
 
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Float
+from xblock.fields import Scope, String, Float, Boolean
+from xblock.fragment import Fragment
 import json
 import requests
 import pkg_resources
-from web_fragments.fragment import Fragment
 
 
 # ---------------------------------------------------------------------------
-# Resource loader (using pkg_resources, relative to this module)
+# Resource loader
 # ---------------------------------------------------------------------------
 
 def _resource_string(path: str) -> str:
@@ -27,7 +27,6 @@ def _resource_string(path: str) -> str:
       "static/html/ptexblock.html"
       "static/css/ptexblock.css"
       "static/js/src/ptexblock.js"
-    are all under ptexblock/ptexblock/.
     """
     data = pkg_resources.resource_string(__name__, path)
     return data.decode("utf-8")
@@ -51,14 +50,15 @@ class PTEXBlock(XBlock):
     icon_class = "problem"     # Shows as a "problem" in Studio
     has_score = True           # LMS knows this block can produce a score
 
-    # IMPORTANT: tell Studio that we *do* have an author view
+    # IMPORTANT: tell Studio/LMS that we *do* have an author_view
+    # (used by Studio preview; will just call student_view below).
     has_author_view = True
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice",
+        default="PTE Read Aloud Practice v0.12",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -128,8 +128,8 @@ class PTEXBlock(XBlock):
 
     def student_view(self, context=None):
         """
-        Learner-facing view: shows title, instructions, reference text,
-        recorder buttons, and last saved score.
+        Learner-facing view (and also Studio preview): shows title,
+        instructions, reference text, recorder buttons, and last saved score.
         """
         html = _resource_string("static/html/ptexblock.html").format(self=self)
         frag = Fragment(html)
@@ -140,17 +140,15 @@ class PTEXBlock(XBlock):
 
     def author_view(self, context=None):
         """
-        Studio preview view.
+        Studio *preview* view.
 
-        We keep this *identical* to the learner's student_view so that
-        Studio shows exactly what learners will see.
+        We just reuse the student_view so authors see exactly what learners see.
         """
         return self.student_view(context)
 
-    # NOTE: we intentionally do NOT implement studio_view here.
-    # Studio will use its default settings UI (the field editor) when you
-    # click the gear/Edit button, which is enough to edit display_name,
-    # instructions, reference_text, and api_url.
+    # NOTE: no custom studio_view here.
+    # Studio's "Edit" dialog will use the default field editor for the XBlock
+    # fields (display_name, instructions, reference_text, api_url, etc.).
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -159,27 +157,6 @@ class PTEXBlock(XBlock):
         """
         Receive base64 audio from the browser, call the external scoring API,
         and persist last score + feedback.
-
-        Supports two backend response shapes:
-        1) Flat PTE-style metrics:
-           {
-               "accuracy": ...,
-               "completeness": ...,
-               "fluency": ...,
-               "pron_score": ...,
-               "prosody": ...,
-               "words": [...]
-           }
-
-        2) Old style:
-           {
-               "status": "ok",
-               "score": ...,
-               "feedback": {
-                   "accuracy": ...,
-                   ...
-               }
-           }
         """
         audio_base64 = data.get("audio_base64")
         if not audio_base64:
@@ -201,14 +178,12 @@ class PTEXBlock(XBlock):
         try:
             result = resp.json()
         except ValueError:
-            # Backend did not return JSON
             return {
                 "status": "error",
                 "message": f"API returned non-JSON (HTTP {status_code})",
                 "raw": resp.text[:2000],
             }
 
-        # Debug on backend
         print("PTEXBlock backend result:", result)
 
         if not isinstance(result, dict):
@@ -217,7 +192,7 @@ class PTEXBlock(XBlock):
         feedback = {}
         pron_score = 0.0
 
-        # --- Case A: flat metrics --------------------------------------------
+        # --- Case A: flat PTE-style metrics ----------------------------------
         if any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
@@ -232,7 +207,7 @@ class PTEXBlock(XBlock):
             }
             pron_score = feedback.get("pron_score") or 0.0
 
-        # --- Case B: older shape with status/score/feedback -------------------
+        # --- Case B: older wrapped shape -------------------------------------
         else:
             api_status = result.get("status")
             if api_status not in (None, "ok"):
@@ -294,10 +269,7 @@ class PTEXBlock(XBlock):
         Scenarios visible in the xblock-sdk workbench.
         """
         return [
-            (
-                "PTE Read Aloud - Single",
-                "<ptexblock/>",
-            ),
+            ("PTE Read Aloud - Single", "<ptexblock/>"),
             (
                 "PTE Read Aloud - Vertical demo",
                 """
@@ -310,7 +282,7 @@ class PTEXBlock(XBlock):
         ]
 
 
-# Backwards-compat alias: Workbench / Tutor may still be importing this.
+# Backwards-compat alias
 class PTEXBlockWithMixins(PTEXBlock):
     """Alias so existing registrations using PTEXBlockWithMixins keep working."""
     pass
