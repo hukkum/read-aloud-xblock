@@ -11,7 +11,7 @@ def package_data(pkg, roots):
 
 setup(
     name='ptexblock-xblock',
-    version='0.7',
+    version='0.8',
     description='Minimal PTE XBlock v0.7',
     packages=['ptexblock'],
     entry_points={

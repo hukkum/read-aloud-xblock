@@ -51,7 +51,9 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     """
 
     icon_class = "problem"     # Shows as a "problem" in Studio
-    has_score = True           # LMS knows this block can produce a score
+    has_score = True   
+    # ✨ This is the crucial line for Studio:
+    has_author_view = True        
 
     # Tell StudioEditableXBlockMixin which fields to expose in the Settings form
     editable_fields = (
@@ -65,7 +67,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice v0.7",
+        default="PTE Read Aloud Practice v0.8",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
