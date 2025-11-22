@@ -1,148 +1,335 @@
-import json
-from pathlib import Path
+"""
+PTE Read Aloud XBlock (single-question version).
 
-import requests
-from web_fragments.fragment import Fragment
+- Records audio in the browser (MediaRecorder via JS)
+- Sends base64 audio + reference text to an external scoring API
+- Stores last raw pron score (0–90) + feedback JSON in user state
+- Exposes a simple numeric score that can be mapped to course grading
+"""
+
 from xblock.core import XBlock
-from xblock.exceptions import JsonHandlerError
-from xblock.fields import Scope, String, Float
+from xblock.fields import Scope, String, Float, Boolean
+from xblock.fragment import Fragment
+import json
+import requests
+import pkg_resources
+from web_fragments.fragment import Fragment
 
+
+# ---------------------------------------------------------------------------
+# Resource loader (FIXED: back to pkg_resources, relative to this module)
+# ---------------------------------------------------------------------------
+
+def _resource_string(path: str) -> str:
+    """
+    Load a text resource from this XBlock package.
+
+    Path is relative to the *module* package, so:
+      "static/html/ptexblock.html"
+      "static/css/ptexblock.css"
+      "static/js/src/ptexblock.js"
+    are all under ptexblock/ptexblock/.
+    """
+    data = pkg_resources.resource_string(__name__, path)
+    return data.decode("utf-8")
+
+
+
+# ---------------------------------------------------------------------------
+# Main XBlock
+# ---------------------------------------------------------------------------
 
 class PTEXBlock(XBlock):
     """
-    PTE Read Aloud XBlock (SDK-friendly version)
+    Single PTE Read-Aloud style question.
 
-    - Instructor fields: title, instructions, reference_text, api_url
-    - Student records audio -> sent to backend API -> score stored in user_state
+    The template (ptexblock.html) expects these attributes:
+      - self.display_name or self.title
+      - self.instructions
+      - self.reference_text
+      - self.student_score
     """
 
-    # ---------- Instructor-editable fields ----------
-    title = String(
+    icon_class = "problem"     # Shows as a "problem" in Studio
+    has_score = True           # LMS knows this block can produce a score
+
+    # ----- Instructor / author settings (Studio "Settings" form) -------------
+
+    display_name = String(
+        display_name="Component title",
         default="PTE Read Aloud Practice",
-        scope=Scope.content,
-        help="Title shown to learners.",
+        scope=Scope.settings,
+        help="Title shown to learners and in Studio.",
     )
 
     instructions = String(
+        display_name="Instructions",
         default=(
             "Look at the text below. In 40 seconds, you must read this text "
             "aloud as naturally and clearly as possible. The microphone will "
             "stop after 3 seconds of silence!"
         ),
         scope=Scope.content,
-        help="Instructions shown above the text.",
+        help="High-level instructions shown to learners.",
     )
 
     reference_text = String(
+        display_name="Reference text",
         default="Globalization has significantly changed the modern economy.",
         scope=Scope.content,
-        help="Text that the learner must read aloud.",
+        help="Text the learner should read aloud.",
     )
 
     api_url = String(
-        # point this to your local or prod API
-        default="http://127.0.0.1:5001/api/pte/read-aloud",
+        display_name="Scoring API URL",
+        default="https://api.abroadprocess.com/api/pte/read-aloud",
         scope=Scope.settings,
-        help="Backend API endpoint for pronunciation scoring.",
+        help="HTTP endpoint that accepts audio + reference text and returns scores.",
     )
 
-    # ---------- Per-learner state ----------
+    weight = Float(
+        display_name="Problem weight",
+        default=1.0,
+        scope=Scope.settings,
+        help="Maximum score this question contributes to the course grade.",
+    )
+
+    # ----- Per-student state --------------------------------------------------
+
     student_score = Float(
         default=0.0,
         scope=Scope.user_state,
-        help="Last pronunciation score returned by the API.",
+        help="Last raw pronunciation score (0–90) returned by the API.",
     )
 
     student_feedback = String(
         default="",
         scope=Scope.user_state,
-        help="Raw JSON feedback from the scoring API (as string).",
+        help="JSON feedback blob returned by the API.",
     )
 
-    # ---------- Resource loader (FIXES FileNotFound) ----------
-    def resource_string(self, path: str) -> str:
-        """
-        Load a static file relative to this python file.
+    student_words = String(
+        default="[]",
+        scope=Scope.user_state,
+        help="Word-level details as a JSON list.",
+    )
 
-        This makes the path:
-          <repo>/ptexblock/ptexblock/ + path
-        so "static/html/ptexblock.html" ends up at
-          <repo>/ptexblock/ptexblock/static/html/ptexblock.html
-        """
-        here = Path(__file__).parent  # .../ptexblock/ptexblock
-        return (here / path).read_text(encoding="utf-8")
+    # ----- Compatibility helpers ---------------------------------------------
 
-    # ---------- Student view ----------
+    @property
+    def title(self):
+        """
+        Alias for templates that use {self.title}.
+        """
+        return self.display_name
+
+    # ----- Views --------------------------------------------------------------
+
     def student_view(self, context=None):
         """
-        Main learner-facing view.
+        Learner-facing view: shows title, instructions, reference text,
+        recorder buttons, and last saved score.
         """
-        # Load HTML template
-        html = self.resource_string("static/html/ptexblock.html")
-
-        # Allow {self.title}, {self.instructions}, {self.reference_text} in HTML
-        html = html.format(self=self)
-
+        html = _resource_string("static/html/ptexblock.html").format(self=self)
         frag = Fragment(html)
-        frag.add_css(self.resource_string("static/css/ptexblock.css"))
-        frag.add_javascript(self.resource_string("static/js/src/ptexblock.js"))
-        frag.initialize_js("PTEXBlock")
+        frag.add_css(_resource_string("static/css/ptexblock.css"))
+        frag.add_javascript(_resource_string("static/js/src/ptexblock.js"))
+        frag.initialize_js('PTEXBlock')
         return frag
 
-    # ---------- AJAX handler ----------
+    # (Optional) we can add a custom studio_view later; for now, standard
+    # Settings tab lets you edit title / instructions / reference_text / api_url.
+
+    # ----- JSON handler: called from JS after recording ----------------------
+
     @XBlock.json_handler
     def submit_audio(self, data, suffix=""):
         """
-        Called from JS with base64 audio.
-        Expects:
-            { "audio_base64": "data:audio/webm;base64,...." }
+        Receive base64 audio from the browser, call the external scoring API,
+        and persist last score + feedback.
+
+        Supports two backend response shapes:
+        1) Flat PTE-style metrics (what you have now):
+           {
+               "accuracy": ...,
+               "completeness": ...,
+               "fluency": ...,
+               "pron_score": ...,
+               "prosody": ...,
+               "words": [...]
+           }
+
+        2) Old style:
+           {
+               "status": "ok",
+               "score": ...,
+               "feedback": {
+                   "accuracy": ...,
+                   ...
+               }
+           }
         """
         audio_base64 = data.get("audio_base64")
         if not audio_base64:
-            raise JsonHandlerError(400, "Missing audio data")
+            return {"status": "error", "message": "No audio data received."}
 
         payload = {
-            "reference_text": self.reference_text,
+            # For “recorder-only” mode you can leave reference_text blank;
+            # backend can just ignore it.
+            "reference_text": self.reference_text or "",
             "audio_base64": audio_base64,
         }
 
+        # --- Call external API ------------------------------------------------
         try:
-            resp = requests.post(self.api_url, json=payload, timeout=30)
+            resp = requests.post(self.api_url, json=payload, timeout=20)
+            status_code = resp.status_code
             resp.raise_for_status()
+        except Exception as exc:
+            return {"status": "error", "message": f"API error: {exc!s}"}
+
+        try:
             result = resp.json()
-        except Exception as e:
-            raise JsonHandlerError(500, f"Error calling scoring API: {e!s}")
+        except ValueError:
+            # Backend did not return JSON
+            return {
+                "status": "error",
+                "message": f"API returned non-JSON (HTTP {status_code})",
+                "raw": resp.text[:2000],
+            }
 
-        pron_score = result.get("pron_score")
-        if pron_score is None:
-            raise JsonHandlerError(500, f"Invalid API response: {result}")
+        # Debug on backend
+        print("PTEXBlock backend result:", result)
 
-        # Save state
-        self.student_score = float(pron_score)
-        self.student_feedback = json.dumps(result)
+        if not isinstance(result, dict):
+            return {"status": "error", "message": "API returned unexpected format."}
+
+        feedback = {}
+        pron_score = 0.0
+
+        # --- Case A: your current backend (flat metrics) ----------------------
+        if any(
+            key in result
+            for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
+        ):
+            feedback = {
+                "pron_score": result.get("pron_score"),
+                "accuracy": result.get("accuracy"),
+                "fluency": result.get("fluency"),
+                "prosody": result.get("prosody"),
+                "completeness": result.get("completeness"),
+                "words": result.get("words") or [],
+            }
+            pron_score = feedback.get("pron_score") or 0.0
+
+        # --- Case B: older shape with status/score/feedback -------------------
+        else:
+            api_status = result.get("status")
+            if api_status not in (None, "ok"):
+                return {
+                    "status": "error",
+                    "message": (
+                        result.get("message")
+                        or result.get("error")
+                        or "Scoring API returned an error."
+                    ),
+                }
+
+            inner_fb = result.get("feedback") or {}
+            feedback = {
+                "pron_score": inner_fb.get("pron_score"),
+                "accuracy": inner_fb.get("accuracy"),
+                "fluency": inner_fb.get("fluency"),
+                "prosody": inner_fb.get("prosody"),
+                "completeness": inner_fb.get("completeness"),
+                "words": inner_fb.get("words") or result.get("words") or [],
+            }
+            if "score" in result:
+                pron_score = result["score"]
+            else:
+                pron_score = feedback.get("pron_score") or 0.0
+
+        # --- Persist into student state --------------------------------------
+        if isinstance(pron_score, (int, float)):
+            self.student_score = float(pron_score)
+        else:
+            self.student_score = 0.0
+
+        self.student_feedback = json.dumps(feedback)
+        self.student_words = json.dumps(feedback.get("words") or [])
+
+        # Optionally, later we can publish grade here for LMS gradebook
+        # (we keep it off in workbench to avoid surprises).
 
         return {
             "status": "ok",
             "score": self.student_score,
-            "feedback": result,
+            "feedback": feedback,
         }
 
-    # ---------- Grading hooks ----------
+
+
+    # ----- Grading hooks ------------------------------------------------------
+
     def max_score(self):
-        return 90.0
+        return float(self.weight or 1.0)
 
-    def get_score(self):
-        return self.student_score
+    def calculate_score(self):
+        """
+        Map 0–90 pronunciation score onto 0–weight for LMS gradebook.
+        """
+        raw = float(self.student_score or 0.0)
+        return (raw / 90.0) * self.max_score()
 
-    def set_score(self, score):
-        self.student_score = float(score)
+    # ----- Workbench scenarios -----------------------------------------------
 
-    # ---------- Workbench scenario ----------
     @staticmethod
     def workbench_scenarios():
+        """
+        Scenarios visible in the xblock-sdk workbench.
+        """
         return [
             (
                 "PTE Read Aloud - Single",
-                "<vertical_demo><ptexblock/></vertical_demo>",
+                "<ptexblock/>",
+            ),
+            (
+                "PTE Read Aloud - Vertical demo",
+                """
+                <vertical_demo>
+                    <ptexblock/>
+                    <ptexblock/>
+                </vertical_demo>
+                """,
             ),
         ]
+    
+    def studio_view(self, context=None):
+        """
+        Simple Studio view placeholder – shows the settings currently stored.
+        In real Studio, you’d build a form + JS to edit these.
+        """
+        html = u"""
+            <div class="pte-container">
+                <h2>Studio view for PTE Read Aloud</h2>
+                <p><strong>Title:</strong> {title}</p>
+                <p><strong>Instructions:</strong> {instructions}</p>
+                <p><strong>Reference text:</strong> {reference_text}</p>
+                <p><em>(Editing UI to come later – this is just to verify Studio view works.)</em></p>
+            </div>
+        """.format(
+            title=self.title,
+            instructions=self.instructions,
+            reference_text=self.reference_text,
+        )
+
+        frag = Fragment(html)
+        frag.add_css(_resource_string("static/css/ptexblock.css"))
+        return frag
+
+
+
+# Backwards-compat alias: Workbench / Tutor may still be importing this.
+class PTEXBlockWithMixins(PTEXBlock):
+    """Alias so existing registrations using PTEXBlockWithMixins keep working."""
+    pass
