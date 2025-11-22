@@ -16,7 +16,7 @@ from web_fragments.fragment import Fragment
 
 
 # ---------------------------------------------------------------------------
-# Resource loader
+# Resource loader (using pkg_resources, relative to this module)
 # ---------------------------------------------------------------------------
 
 def _resource_string(path: str) -> str:
@@ -51,14 +51,14 @@ class PTEXBlock(XBlock):
     icon_class = "problem"     # Shows as a "problem" in Studio
     has_score = True           # LMS knows this block can produce a score
 
-    # IMPORTANT: tell Studio that we provide an author_view
+    # IMPORTANT: tell Studio that we *do* have an author view
     has_author_view = True
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice v0.9",
+        default="PTE Read Aloud Practice",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -126,9 +126,10 @@ class PTEXBlock(XBlock):
 
     # ----- Views --------------------------------------------------------------
 
-    def _build_fragment(self, context=None):
+    def student_view(self, context=None):
         """
-        Shared renderer for both student_view and author_view.
+        Learner-facing view: shows title, instructions, reference text,
+        recorder buttons, and last saved score.
         """
         html = _resource_string("static/html/ptexblock.html").format(self=self)
         frag = Fragment(html)
@@ -137,18 +138,19 @@ class PTEXBlock(XBlock):
         frag.initialize_js('PTEXBlock')
         return frag
 
-    def student_view(self, context=None):
-        """
-        Learner-facing view in the LMS.
-        """
-        return self._build_fragment(context)
-
     def author_view(self, context=None):
         """
-        Preview inside Studio. We keep it identical to student_view
-        (no inline editing here; editing happens in the Studio form).
+        Studio preview view.
+
+        We keep this *identical* to the learner's student_view so that
+        Studio shows exactly what learners will see.
         """
-        return self._build_fragment(context)
+        return self.student_view(context)
+
+    # NOTE: we intentionally do NOT implement studio_view here.
+    # Studio will use its default settings UI (the field editor) when you
+    # click the gear/Edit button, which is enough to edit display_name,
+    # instructions, reference_text, and api_url.
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -199,6 +201,7 @@ class PTEXBlock(XBlock):
         try:
             result = resp.json()
         except ValueError:
+            # Backend did not return JSON
             return {
                 "status": "error",
                 "message": f"API returned non-JSON (HTTP {status_code})",
@@ -214,7 +217,7 @@ class PTEXBlock(XBlock):
         feedback = {}
         pron_score = 0.0
 
-        # --- Case A: flat metrics (current backend) ---------------------------
+        # --- Case A: flat metrics --------------------------------------------
         if any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
