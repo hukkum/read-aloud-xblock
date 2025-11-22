@@ -9,16 +9,14 @@ PTE Read Aloud XBlock (single-question version).
 
 from xblock.core import XBlock
 from xblock.fields import Scope, String, Float
-from xblockutils.studio_editable import StudioEditableXBlockMixin
-from web_fragments.fragment import Fragment
-
 import json
 import requests
 import pkg_resources
+from web_fragments.fragment import Fragment
 
 
 # ---------------------------------------------------------------------------
-# Resource loader (pkg_resources, relative to this module)
+# Resource loader
 # ---------------------------------------------------------------------------
 
 def _resource_string(path: str) -> str:
@@ -39,35 +37,28 @@ def _resource_string(path: str) -> str:
 # Main XBlock
 # ---------------------------------------------------------------------------
 
-class PTEXBlock(StudioEditableXBlockMixin, XBlock):
+class PTEXBlock(XBlock):
     """
     Single PTE Read-Aloud style question.
 
     The template (ptexblock.html) expects these attributes:
-      - self.display_name (aka self.title)
+      - self.display_name or self.title
       - self.instructions
       - self.reference_text
       - self.student_score
     """
 
     icon_class = "problem"     # Shows as a "problem" in Studio
-    has_score = True   
-    # ✨ This is the crucial line for Studio:
-    has_author_view = True        
+    has_score = True           # LMS knows this block can produce a score
 
-    # Tell StudioEditableXBlockMixin which fields to expose in the Settings form
-    editable_fields = (
-        "display_name",
-        "instructions",
-        "reference_text",
-        "api_url",
-    )
+    # IMPORTANT: tell Studio that we provide an author_view
+    has_author_view = True
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice v0.8",
+        default="PTE Read Aloud Practice v0.9",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -135,11 +126,9 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     # ----- Views --------------------------------------------------------------
 
-    def student_view(self, context=None):
+    def _build_fragment(self, context=None):
         """
-        Learner-facing view (also used as author_view in Studio):
-        shows title, instructions, reference text, recorder buttons,
-        and last saved score + feedback.
+        Shared renderer for both student_view and author_view.
         """
         html = _resource_string("static/html/ptexblock.html").format(self=self)
         frag = Fragment(html)
@@ -148,39 +137,18 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         frag.initialize_js('PTEXBlock')
         return frag
 
+    def student_view(self, context=None):
+        """
+        Learner-facing view in the LMS.
+        """
+        return self._build_fragment(context)
+
     def author_view(self, context=None):
         """
-        Studio preview mode. Keep it identical to student_view so
-        you see exactly what learners see instead of a grey box.
+        Preview inside Studio. We keep it identical to student_view
+        (no inline editing here; editing happens in the Studio form).
         """
-        return self.student_view(context)
-
-    def studio_view(self, context=None):
-        """
-        Studio "Edit" modal.
-
-        We keep this *very* simple on purpose:
-        - No external HTML/JS resources that could 500.
-        - All real editing is done via the Settings gear (using
-          StudioEditableXBlockMixin and editable_fields).
-        """
-        html = u"""
-        <div class="ptex-studio-wrapper">
-          <h3>PTE Read Aloud – Studio</h3>
-          <p>
-            This component is configured from the <strong>Settings</strong>
-            dialog in Studio.
-          </p>
-          <ul>
-            <li><strong>Component title</strong> – block title</li>
-            <li><strong>Instructions</strong> – text shown above the prompt</li>
-            <li><strong>Reference text</strong> – sentence/paragraph to read</li>
-            <li><strong>Scoring API URL</strong> – backend endpoint</li>
-          </ul>
-          <p>No additional options are available in this editor.</p>
-        </div>
-        """
-        return Fragment(html)
+        return self._build_fragment(context)
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -191,7 +159,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         and persist last score + feedback.
 
         Supports two backend response shapes:
-        1) Flat PTE-style metrics (what you have now):
+        1) Flat PTE-style metrics:
            {
                "accuracy": ...,
                "completeness": ...,
@@ -216,8 +184,6 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             return {"status": "error", "message": "No audio data received."}
 
         payload = {
-            # For “recorder-only” mode you can leave reference_text blank;
-            # backend can just ignore it.
             "reference_text": self.reference_text or "",
             "audio_base64": audio_base64,
         }
@@ -233,7 +199,6 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         try:
             result = resp.json()
         except ValueError:
-            # Backend did not return JSON
             return {
                 "status": "error",
                 "message": f"API returned non-JSON (HTTP {status_code})",
@@ -249,7 +214,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         feedback = {}
         pron_score = 0.0
 
-        # --- Case A: flat metrics --------------------------------------------
+        # --- Case A: flat metrics (current backend) ---------------------------
         if any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
@@ -264,7 +229,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             }
             pron_score = feedback.get("pron_score") or 0.0
 
-        # --- Case B: older shape with status/score/feedback ------------------
+        # --- Case B: older shape with status/score/feedback -------------------
         else:
             api_status = result.get("status")
             if api_status not in (None, "ok"):
