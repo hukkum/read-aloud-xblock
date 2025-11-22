@@ -9,11 +9,11 @@ PTE Read Aloud XBlock (single-question version).
 
 from xblock.core import XBlock
 from xblock.fields import Scope, String, Float, Boolean
-from xblock.fragment import Fragment
 import json
 import requests
 import pkg_resources
 from web_fragments.fragment import Fragment
+from xblockutils.studio_editable import StudioEditableXBlockMixin
 
 
 # ---------------------------------------------------------------------------
@@ -34,12 +34,11 @@ def _resource_string(path: str) -> str:
     return data.decode("utf-8")
 
 
-
 # ---------------------------------------------------------------------------
 # Main XBlock
 # ---------------------------------------------------------------------------
 
-class PTEXBlock(XBlock):
+class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     """
     Single PTE Read-Aloud style question.
 
@@ -52,6 +51,15 @@ class PTEXBlock(XBlock):
 
     icon_class = "problem"     # Shows as a "problem" in Studio
     has_score = True           # LMS knows this block can produce a score
+
+    # These fields will appear in the Studio edit modal provided by
+    # StudioEditableXBlockMixin.
+    editable_fields = (
+        "display_name",
+        "instructions",
+        "reference_text",
+        "api_url",
+    )
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
@@ -137,8 +145,9 @@ class PTEXBlock(XBlock):
         frag.initialize_js('PTEXBlock')
         return frag
 
-    # (Optional) we can add a custom studio_view later; for now, standard
-    # Settings tab lets you edit title / instructions / reference_text / api_url.
+    # We do NOT override studio_view now. StudioEditableXBlockMixin will
+    # supply a standard edit modal that lets you edit display_name,
+    # instructions, reference_text, and api_url.
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -266,40 +275,6 @@ class PTEXBlock(XBlock):
             "score": self.student_score,
             "feedback": feedback,
         }
-    @XBlock.json_handler
-    def save_studio_settings(self, data, suffix=''):
-        """
-        Called from Studio to save edited settings.
-        """
-        try:
-            # These keys must match what we send from JS
-            display_name = data.get('display_name', '').strip()
-            instructions = data.get('instructions', '').strip()
-            reference_text = data.get('reference_text', '').strip()
-            api_url = data.get('api_url', '').strip()
-
-            if display_name:
-                self.display_name = display_name
-            if instructions:
-                self.instructions = instructions
-            if reference_text:
-                self.reference_text = reference_text
-            if api_url:
-                self.api_url = api_url
-
-            return {
-                "status": "ok",
-                "display_name": self.display_name,
-                "instructions": self.instructions,
-                "reference_text": self.reference_text,
-                "api_url": self.api_url,
-            }
-        except Exception as exc:
-            return {
-                "status": "error",
-                "message": "Failed to save settings: {}".format(exc),
-            }
-
 
     # ----- Grading hooks ------------------------------------------------------
 
@@ -335,19 +310,6 @@ class PTEXBlock(XBlock):
                 """,
             ),
         ]
-    
-    def studio_view(self, context=None):
-        """
-        Studio authoring view: simple form to edit title, instructions,
-        reference text, and API URL. Works in both SDK and real Studio.
-        """
-        html = _resource_string("static/html/ptexblock_studio.html").format(self=self)
-        frag = Fragment(html)
-        frag.add_css(_resource_string("static/css/ptexblock.css"))
-        frag.add_javascript(_resource_string("static/js/src/ptexblock.js"))
-        frag.initialize_js('PTEXBlockStudio')
-        return frag
-
 
 
 # Backwards-compat alias: Workbench / Tutor may still be importing this.
