@@ -12,17 +12,17 @@ function PTEXBlock(runtime, element, data) {
     var $wordsBody   = $element.find('#pte-words-table tbody');
 
     // Progress bar
-    var $progressBar      = $element.find('.pte-progress-bar');
-    var $progressInner    = $element.find('.pte-progress-bar-inner');
+    var $progressBar   = $element.find('.pte-progress-bar');
+    var $progressInner = $element.find('.pte-progress-bar-inner');
 
-        // ----- Config: primary source is JS data from initialize_js -----
-    // data = { mode, question_type, preroll_delay, recording_limit, max_attempts }
+    // ----- Config: primary source is JS data from initialize_js -----
+    // data = { mode, preroll_delay, recording_limit, max_attempts }
 
     var mode = (data && data.mode ? data.mode : 'practice').toString().toLowerCase();
 
-    var preroll = parseInt(data && data.preroll_delay, 10);
+    var preroll        = parseInt(data && data.preroll_delay, 10);
     var recordingLimit = parseInt(data && data.recording_limit, 10);
-    var maxAttempts = parseInt(data && data.max_attempts, 10);
+    var maxAttempts    = parseInt(data && data.max_attempts, 10);
 
     // Fallback to HTML attributes only if JS data is missing
     if (isNaN(preroll)) {
@@ -56,9 +56,7 @@ function PTEXBlock(runtime, element, data) {
         'maxAttempts:', maxAttempts
     );
 
-
-
-    // State
+    // ----- State -----
     var mediaRecorder = null;
     var recordedChunks = [];
     var stream = null;
@@ -353,13 +351,20 @@ function PTEXBlock(runtime, element, data) {
                     setStatus("Your response has been submitted.");
                     $startBtn.prop('disabled', true);
                     $stopBtn.prop('disabled', true);
+
+                    // Extra safety: keep feedback & last-score hidden
+                    if ($feedbackBox.length) {
+                        $feedbackBox.hide();
+                    }
+                    $element.find('.pte-last-score-card').hide();
+
                     return;
                 }
 
                 // Practice mode: show score & feedback
                 setStatus(
-                    "Answer submitted and scored. You can retry to improve your score "
-                    + "(Attempt " + attempts + " of " + maxAttempts + ")."
+                    "Answer submitted and scored. You can retry to improve your score " +
+                    "(Attempt " + attempts + " of " + maxAttempts + ")."
                 );
 
                 var score = response.score || 0;

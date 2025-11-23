@@ -1,14 +1,15 @@
 """
-PTE Read Aloud XBlock (single-question version).
+PTE Speaking Recorder XBlock (single-question version).
 
 - Records audio in the browser (MediaRecorder via JS)
 - Sends base64 audio + reference text to an external scoring API
-- Stores last raw pron score (0–90) + feedback JSON in user state
+- Supports multiple backend endpoints (read-aloud vs generic speaking)
+- Stores last raw score (0–90) + feedback JSON in user state
 - Exposes a simple numeric score that can be mapped to course grading
 """
 
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Float, Integer  # NEW: Integer
+from xblock.fields import Scope, String, Float, Integer
 from xblock.fragment import Fragment
 from xblockutils.studio_editable import StudioEditableXBlockMixin
 
@@ -40,17 +41,14 @@ def _resource_string(path: str) -> str:
 
 class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     """
-    Single PTE Read-Aloud style question.
+    Single PTE-style speaking question, with a generic "Recorded Answer" UI.
 
-    The template (ptexblock.html) expects these attributes:
+    The template (ptexblock.html) expects:
       - self.display_name or self.title
-      - self.instructions
-      - self.reference_text
       - self.student_score
 
     And for the upgraded UI:
       - self.mode               (practice | exam)
-      - self.question_type      (e.g., read_aloud)
       - self.preroll_delay      (seconds)
       - self.recording_limit    (seconds)
       - self.max_attempts       (practice only)
@@ -67,11 +65,13 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         "display_name",
         "instructions",
         "reference_text",
-        "api_url",
+        # API endpoints
+        "api_url",          # read-aloud endpoint
+        "speaking_api_url", # generic/topic speaking endpoint
+        "endpoint_kind",    # read_aloud | speaking
         "weight",
-        # NEW: mode + timing config
+        # Mode + timing config
         "mode",
-        "question_type",
         "preroll_delay",
         "recording_limit",
         "max_attempts",
@@ -81,7 +81,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     display_name = String(
         display_name="Component title",
-        default="PTE Read Aloud Practice",
+        default="PTE Recorded Answer (Practice)",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -89,26 +89,44 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     instructions = String(
         display_name="Instructions",
         default=(
-            "Look at the text below. In 40 seconds, you must read this text "
-            "aloud as naturally and clearly as possible. The microphone will "
-            "stop after 3 seconds of silence!"
+            "Use the recorder below to submit your spoken response. "
+            "The microphone will start after a short countdown."
         ),
         scope=Scope.content,
-        help="High-level instructions shown to learners.",
+        help="High-level instructions (usually shown in a separate HTML block).",
     )
 
     reference_text = String(
-        display_name="Reference text",
+        display_name="Reference text / expected answer",
         default="Globalization has significantly changed the modern economy.",
         scope=Scope.content,
-        help="Text the learner should read aloud.",
+        help=(
+            "Text the learner should read aloud, or a short reference "
+            "answer for content comparison. Not shown to learners by default."
+        ),
     )
 
+    # --- API endpoints -------------------------------------------------------
+
     api_url = String(
-        display_name="Scoring API URL",
+        display_name="Read Aloud API URL",
         default="https://api.abroadprocess.com/api/pte/read-aloud",
         scope=Scope.settings,
-        help="HTTP endpoint that accepts audio + reference text and returns scores.",
+        help="Endpoint for read-aloud scoring.",
+    )
+
+    speaking_api_url = String(
+        display_name="Speaking API URL",
+        default="https://api.abroadprocess.com/api/pte/speaking",
+        scope=Scope.settings,
+        help="Endpoint for general/topic speaking questions.",
+    )
+
+    endpoint_kind = String(
+        display_name="Endpoint kind",
+        default="read_aloud",  # or "speaking"
+        scope=Scope.settings,
+        help="Which backend endpoint this recorder uses: 'read_aloud' or 'speaking'.",
     )
 
     weight = Float(
@@ -118,7 +136,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         help="Maximum score this question contributes to the course grade.",
     )
 
-    # NEW: mode & timing configuration ---------------------------------------
+    # --- Mode & timing configuration ----------------------------------------
 
     mode = String(
         display_name="Mode (practice or exam)",
@@ -128,13 +146,6 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             "Use 'practice' to show AI feedback and allow multiple attempts, "
             "or 'exam' to hide feedback and allow only one submission."
         ),
-    )
-
-    question_type = String(
-        display_name="Question type label",
-        default="read_aloud",
-        scope=Scope.settings,
-        help="Label sent to the backend (optional) to identify this question type.",
     )
 
     preroll_delay = Integer(
@@ -163,7 +174,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     student_score = Float(
         default=0.0,
         scope=Scope.user_state,
-        help="Last raw pronunciation score (0–90) returned by the API.",
+        help="Last raw score (0–90) returned by the API.",
     )
 
     student_feedback = String(
@@ -195,6 +206,17 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     def is_exam(self) -> bool:
         return (self.mode or "").lower() == "exam"
 
+    @property
+    def api_endpoint_url(self) -> str:
+        """
+        Return the effective API URL based on endpoint_kind.
+        """
+        kind = (self.endpoint_kind or "read_aloud").lower()
+        if kind == "speaking":
+            return self.speaking_api_url or self.api_url
+        # default: read-aloud
+        return self.api_url
+
     # ----- Views --------------------------------------------------------------
 
     def student_view(self, context=None):
@@ -202,6 +224,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         Learner-facing view (and also Studio preview): shows recorder,
         status/progress, and (in practice mode) feedback.
         """
+        # You can still use this in the template if you want a badge.
         badge_label = "Exam Question" if self.is_exam else "Practice Mode"
 
         html = _resource_string("static/html/ptexblock.html").format(
@@ -215,7 +238,6 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         # JS config: pass everything explicitly so we don't depend on data-attrs
         js_config = {
             "mode": (self.mode or "practice"),
-            "question_type": (self.question_type or "read_aloud"),
             "preroll_delay": int(self.preroll_delay or 0),
             "recording_limit": int(self.recording_limit or 40),
             "max_attempts": int(self.max_attempts or (1 if self.is_exam else 3)),
@@ -223,8 +245,6 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
         frag.initialize_js('PTEXBlock', js_config)
         return frag
-
-
 
     def author_view(self, context=None):
         """
@@ -235,7 +255,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     # NOTE: no custom studio_view or studio_submit here.
     # StudioEditableXBlockMixin provides those and wires up the generic
-    # field editor UI, similar to the Google Calendar XBlock.
+    # field editor UI.
 
     # ----- JSON handler: called from JS after recording ----------------------
 
@@ -252,14 +272,14 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         payload = {
             "reference_text": self.reference_text or "",
             "audio_base64": audio_base64,
-            # NOTE: if/when your backend is ready, you can safely add:
+            # Backend does NOT currently care about practice vs exam.
+            # If you later need it:
             # "mode": self.mode,
-            # "question_type": self.question_type,
         }
 
         # --- Call external API ------------------------------------------------
         try:
-            resp = requests.post(self.api_url, json=payload, timeout=20)
+            resp = requests.post(self.api_endpoint_url, json=payload, timeout=20)
             status_code = resp.status_code
             resp.raise_for_status()
         except Exception as exc:
@@ -356,15 +376,25 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     @staticmethod
     def workbench_scenarios():
         return [
-            ("PTE Read Aloud - Practice",
-            '<ptexblock mode="practice" preroll_delay="5" recording_limit="40" '
-            'max_attempts="3" display_name="PTE Practice Recorder"/>'),
-
-            ("PTE Read Aloud - Exam",
-            '<ptexblock mode="exam" preroll_delay="10" recording_limit="40" '
-            'max_attempts="1" display_name="PTE Exam Recorder"/>'),
+            (
+                "PTE Recorder - Practice (Read Aloud)",
+                '<ptexblock mode="practice" endpoint_kind="read_aloud" '
+                'preroll_delay="5" recording_limit="40" '
+                'max_attempts="3" display_name="PTE Practice Recorder - Read Aloud"/>'
+            ),
+            (
+                "PTE Recorder - Exam (Read Aloud)",
+                '<ptexblock mode="exam" endpoint_kind="read_aloud" '
+                'preroll_delay="10" recording_limit="40" '
+                'max_attempts="1" display_name="PTE Exam Recorder - Read Aloud"/>'
+            ),
+            (
+                "PTE Recorder - Practice (Speaking)",
+                '<ptexblock mode="practice" endpoint_kind="speaking" '
+                'preroll_delay="5" recording_limit="40" '
+                'max_attempts="3" display_name="PTE Practice Recorder - Speaking"/>'
+            ),
         ]
-
 
 
 # Backwards-compat alias

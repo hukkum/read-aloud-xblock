@@ -1,6 +1,5 @@
 <div class="pte-container pte-read-aloud-block"
      data-mode="{self.mode}"
-     data-question-type="{self.question_type}"
      data-preroll="{self.preroll_delay}"
      data-recording-limit="{self.recording_limit}"
      data-max-attempts="{self.max_attempts}">
@@ -8,6 +7,8 @@
   <div class="pte-recorder-card">
     <div class="pte-recorder-header">
       <span class="pte-recorder-title">Recorded Answer</span>
+      <!-- If you don't want students to see practice/exam labels,
+           you can remove this span entirely -->
       <span class="pte-mode-badge">
         {badge_label}
       </span>
@@ -52,7 +53,7 @@
 
   <!-- Feedback panel (shown only in practice mode after scoring) -->
   <div id="pte-feedback" class="pte-section pte-feedback-panel" style="display:none;">
-    <h3 class="pte-feedback-title">PTE-style AI Feedback</h3>
+    <h3 class="pte-feedback-title">AI Feedback</h3>
 
     <!-- 3-criterion summary + explainer -->
     <div class="pte-feedback-grid">
