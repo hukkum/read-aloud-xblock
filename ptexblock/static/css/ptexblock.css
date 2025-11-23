@@ -1,12 +1,475 @@
+/* Container / card */
 .pte-container {
-    padding: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    font-family: inherit;
+    color: #1f2933;
+    box-sizing: border-box;
 }
 
-.pte-start, .pte-stop {
-    margin-right: 10px;
+.pte-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.pte-title {
+    margin: 0 0 4px 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.pte-subtitle {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.pte-mode-badge-wrapper {
+    flex-shrink: 0;
+}
+
+.pte-mode-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background-color: #e3f2fd;
+    color: #1e3a8a;
+}
+
+/* Different color by mode (purely cosmetic) */
+.pte-read-aloud-block[data-mode="practice"] .pte-mode-badge {
+    background-color: #ecfdf3;
+    color: #166534;
+}
+
+.pte-read-aloud-block[data-mode="exam"] .pte-mode-badge {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.pte-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 6px 0 10px;
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+
+.pte-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pte-divider {
+    border: none;
+    border-bottom: 1px solid #e5e7eb;
+    margin: 8px 0 12px;
+}
+
+/* Generic section spacing */
+.pte-section {
+    margin-bottom: 16px;
+}
+
+/* Instructions */
+.pte-instructions-section .pte-instructions {
+    margin: 0;
+}
+
+/* Reference text box */
+.pte-label {
+    margin-bottom: 4px;
+    font-size: 0.95rem;
+}
+
+.pte-reference-box {
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    padding: 10px 12px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.pte-reference-text {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+/* Step indicator + timers */
+.pte-status-timer-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.pte-step-indicator {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.pte-step-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    background-color: #f3f4f6;
+    color: #6b7280;
+}
+
+.pte-step-pill-active {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+.pte-timers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.pte-timer {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 0.85rem;
+}
+
+.pte-timer-label {
+    color: #6b7280;
+}
+
+.pte-timer-value {
+    font-weight: 600;
+}
+
+/* Recorder row */
+.pte-recorder-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pte-recorder {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Buttons */
+.pte-start,
+.pte-stop {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: none;
+    font-size: 0.9rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.pte-start {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.pte-start:hover:not(:disabled) {
+    background-color: #1d4ed8;
+}
+
+.pte-stop {
+    background-color: #f97316;
+    color: #ffffff;
+}
+
+.pte-stop[disabled],
+.pte-start[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.pte-start:active:not(:disabled),
+.pte-stop:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+/* Status line */
+.pte-status {
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+
+.pte-status-message strong {
+    font-weight: 600;
+}
+
+/* Last score card */
+.pte-last-score-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #f9fafb;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+}
+
+.pte-last-score-label {
+    color: #6b7280;
+}
+
+.pte-last-score-value {
+    font-weight: 600;
+}
+
+.pte-score-value {
+    font-size: 1rem;
+}
+
+/* Feedback panel */
+.pte-feedback-panel {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+}
+
+.pte-feedback-title {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.05rem;
+}
+
+.pte-feedback-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+@media (min-width: 768px) {
+    .pte-feedback-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+.pte-feedback-card {
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    padding: 10px 12px;
+}
+
+.pte-feedback-card-title {
+    margin-top: 0;
+    margin-bottom: 6px;
+    font-size: 0.95rem;
+}
+
+.pte-explainer {
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+
+.pte-explainer p {
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+
+.pte-explainer ul {
+    margin: 0 0 0 16px;
+    padding: 0;
+}
+
+/* Tables */
+.pte-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.pte-summary-table th,
+.pte-summary-table td {
+    border: 1px solid #e5e7eb;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.pte-summary-table th {
+    background-color: #f3f4f6;
+    font-weight: 600;
+}
+
+.pte-summary-table tbody tr:nth-child(even) {
+    background-color: #f9fafb;
+}
+
+/* Word table scroll if long */
+.pte-words-table-wrapper {
+    max-height: 220px;
+    overflow-y: auto;
 }
 
 /* Studio-specific */
 .pte-studio .pte-field {
     margin-bottom: 10px;
 }
+
+
+/* Container base (if not already present) */
+.pte-container {
+    padding: 16px 20px;
+    margin: 16px 0;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    font-family: inherit;
+    color: #1f2933;
+    box-sizing: border-box;
+}
+
+/* Recorder card */
+.pte-recorder-card {
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    padding: 12px 14px;
+}
+
+.pte-recorder-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.pte-recorder-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.pte-mode-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: #ecfdf3;
+    color: #166534;
+}
+
+.pte-read-aloud-block[data-mode="exam"] .pte-mode-badge {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.pte-recorder-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pte-status-line {
+    font-size: 0.85rem;
+    color: #374151;
+}
+
+.pte-status-label {
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+/* XP-style progress bar */
+.pte-progress-bar {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    border-radius: 4px;
+    border: 1px solid #9ca3af;
+    background-color: #e5e7eb;
+    overflow: hidden;
+}
+
+.pte-progress-bar-inner {
+    height: 100%;
+    width: 0%;
+    background-image: linear-gradient(
+        135deg,
+        #60a5fa 25%,
+        #3b82f6 25%,
+        #3b82f6 50%,
+        #60a5fa 50%,
+        #60a5fa 75%,
+        #3b82f6 75%,
+        #3b82f6 100%
+    );
+    background-size: 30px 30px;
+    /* animation only when running, see .pte-progress-running */
+}
+
+.pte-progress-running .pte-progress-bar-inner {
+    animation: pte-stripe 1s linear infinite;
+}
+
+@keyframes pte-stripe {
+    from { background-position: 0 0; }
+    to   { background-position: 30px 0; }
+}
+
+/* Controls row */
+.pte-controls-row {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Buttons (same as before, simplified) */
+.pte-start,
+.pte-stop {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: none;
+    font-size: 0.9rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.pte-start {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.pte-start:hover:not(:disabled) {
+    background-color: #1d4ed8;
+}
+
+.pte-stop {
+    background-color: #f97316;
+    color: #ffffff;
+}
+
+.pte-stop[disabled],
+.pte-start[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.pte-start:active:not(:disabled),
+.pte-stop:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+/* Last score + feedback styles from previous version can stay as-is */

@@ -8,7 +8,7 @@ PTE Read Aloud XBlock (single-question version).
 """
 
 from xblock.core import XBlock
-from xblock.fields import Scope, String, Float
+from xblock.fields import Scope, String, Float, Integer  # NEW: Integer
 from xblock.fragment import Fragment
 from xblockutils.studio_editable import StudioEditableXBlockMixin
 
@@ -47,6 +47,13 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
       - self.instructions
       - self.reference_text
       - self.student_score
+
+    And for the upgraded UI:
+      - self.mode               (practice | exam)
+      - self.question_type      (e.g., read_aloud)
+      - self.preroll_delay      (seconds)
+      - self.recording_limit    (seconds)
+      - self.max_attempts       (practice only)
     """
 
     icon_class = "problem"     # Shows as a "problem" in Studio
@@ -62,6 +69,12 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         "reference_text",
         "api_url",
         "weight",
+        # NEW: mode + timing config
+        "mode",
+        "question_type",
+        "preroll_delay",
+        "recording_limit",
+        "max_attempts",
     )
 
     # ----- Instructor / author settings (Studio "Settings" form) -------------
@@ -105,6 +118,46 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         help="Maximum score this question contributes to the course grade.",
     )
 
+    # NEW: mode & timing configuration ---------------------------------------
+
+    mode = String(
+        display_name="Mode (practice or exam)",
+        default="practice",   # default keeps current behavior
+        scope=Scope.settings,
+        help=(
+            "Use 'practice' to show AI feedback and allow multiple attempts, "
+            "or 'exam' to hide feedback and allow only one submission."
+        ),
+    )
+
+    question_type = String(
+        display_name="Question type label",
+        default="read_aloud",
+        scope=Scope.settings,
+        help="Label sent to the backend (optional) to identify this question type.",
+    )
+
+    preroll_delay = Integer(
+        display_name="Prep time (seconds)",
+        default=3,
+        scope=Scope.settings,
+        help="Countdown before recording starts.",
+    )
+
+    recording_limit = Integer(
+        display_name="Speaking time limit (seconds)",
+        default=40,
+        scope=Scope.settings,
+        help="Maximum length of the recording.",
+    )
+
+    max_attempts = Integer(
+        display_name="Max attempts (practice mode)",
+        default=3,
+        scope=Scope.settings,
+        help="Maximum number of attempts in practice mode (ignored in exam mode).",
+    )
+
     # ----- Per-student state --------------------------------------------------
 
     student_score = Float(
@@ -134,19 +187,44 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         """
         return self.display_name
 
+    @property
+    def is_practice(self) -> bool:
+        return (self.mode or "").lower() == "practice"
+
+    @property
+    def is_exam(self) -> bool:
+        return (self.mode or "").lower() == "exam"
+
     # ----- Views --------------------------------------------------------------
 
     def student_view(self, context=None):
         """
-        Learner-facing view (and also Studio preview): shows title,
-        instructions, reference text, recorder buttons, and last saved score.
+        Learner-facing view (and also Studio preview): shows recorder,
+        status/progress, and (in practice mode) feedback.
         """
-        html = _resource_string("static/html/ptexblock.html").format(self=self)
+        badge_label = "Exam Question" if self.is_exam else "Practice Mode"
+
+        html = _resource_string("static/html/ptexblock.html").format(
+            self=self,
+            badge_label=badge_label,
+        )
         frag = Fragment(html)
         frag.add_css(_resource_string("static/css/ptexblock.css"))
         frag.add_javascript(_resource_string("static/js/src/ptexblock.js"))
-        frag.initialize_js('PTEXBlock')
+
+        # JS config: pass everything explicitly so we don't depend on data-attrs
+        js_config = {
+            "mode": (self.mode or "practice"),
+            "question_type": (self.question_type or "read_aloud"),
+            "preroll_delay": int(self.preroll_delay or 0),
+            "recording_limit": int(self.recording_limit or 40),
+            "max_attempts": int(self.max_attempts or (1 if self.is_exam else 3)),
+        }
+
+        frag.initialize_js('PTEXBlock', js_config)
         return frag
+
+
 
     def author_view(self, context=None):
         """
@@ -174,6 +252,9 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         payload = {
             "reference_text": self.reference_text or "",
             "audio_base64": audio_base64,
+            # NOTE: if/when your backend is ready, you can safely add:
+            # "mode": self.mode,
+            # "question_type": self.question_type,
         }
 
         # --- Call external API ------------------------------------------------
@@ -274,21 +355,16 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     @staticmethod
     def workbench_scenarios():
-        """
-        Scenarios visible in the xblock-sdk workbench.
-        """
         return [
-            ("PTE Read Aloud - Single", "<ptexblock/>"),
-            (
-                "PTE Read Aloud - Vertical demo",
-                """
-                <vertical_demo>
-                    <ptexblock/>
-                    <ptexblock/>
-                </vertical_demo>
-                """,
-            ),
+            ("PTE Read Aloud - Practice",
+            '<ptexblock mode="practice" preroll_delay="5" recording_limit="40" '
+            'max_attempts="3" display_name="PTE Practice Recorder"/>'),
+
+            ("PTE Read Aloud - Exam",
+            '<ptexblock mode="exam" preroll_delay="10" recording_limit="40" '
+            'max_attempts="1" display_name="PTE Exam Recorder"/>'),
         ]
+
 
 
 # Backwards-compat alias

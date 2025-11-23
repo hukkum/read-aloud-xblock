@@ -1,94 +1,123 @@
-<div class="pte-read-aloud-block">
-  <!-- Title / display name -->
-  <h2 class="pte-title">
-    {self.display_name}
-  </h2>
+<div class="pte-container pte-read-aloud-block"
+     data-mode="{self.mode}"
+     data-question-type="{self.question_type}"
+     data-preroll="{self.preroll_delay}"
+     data-recording-limit="{self.recording_limit}"
+     data-max-attempts="{self.max_attempts}">
 
-  <!-- Instructions -->
-  <p class="pte-instructions">
-    {self.instructions}
-  </p>
+  <div class="pte-recorder-card">
+    <div class="pte-recorder-header">
+      <span class="pte-recorder-title">Recorded Answer</span>
+      <span class="pte-mode-badge">
+        {badge_label}
+      </span>
+    </div>
 
-  <!-- Reference text -->
-  <p><strong>Read the following text aloud:</strong></p>
-  <p class="pte-reference-text">{self.reference_text}</p>
+    <div class="pte-recorder-body">
+      <div class="pte-status-line">
+        <span class="pte-status-label">Current Status:</span>
+        <span id="pte-status" class="pte-status-message">
+          Click <strong>“Start”</strong> to begin. You will see a countdown before recording starts.
+        </span>
+      </div>
 
-  <!-- Recorder controls -->
-  <div class="pte-recorder">
-    <button type="button" class="pte-start">🎤 Start Recording</button>
-    <button type="button" class="pte-stop" disabled>⏹ Stop</button>
+      <div class="pte-progress-bar">
+        <div class="pte-progress-bar-inner"></div>
+      </div>
+
+      <div class="pte-controls-row">
+        <button type="button" class="pte-start">
+          🎤 Start
+        </button>
+        <button type="button" class="pte-stop" disabled>
+          ⏹ Stop
+        </button>
+      </div>
+    </div>
   </div>
 
-  <!-- Status line -->
-  <div class="pte-status">
-    <span id="pte-status" class="pte-status-message">
-      Click "Start Recording" to begin.
-    </span>
+  <!-- Last saved score (practice mode only; hidden in exam mode by JS) -->
+  <div class="pte-section">
+    <div class="pte-last-score-card">
+      <div class="pte-last-score-label">
+        Last saved pronunciation score (0–90):
+      </div>
+      <div class="pte-last-score-value">
+        <span id="pte-last-score" class="pte-score-value">
+          {self.student_score}
+        </span>
+      </div>
+    </div>
   </div>
 
-  <!-- Last saved score -->
-  <div class="pte-last-score">
-    Last saved pronunciation score (0–90):
-    <span id="pte-last-score" class="pte-score-value">
-      {self.student_score}
-    </span>
-  </div>
+  <!-- Feedback panel (shown only in practice mode after scoring) -->
+  <div id="pte-feedback" class="pte-section pte-feedback-panel" style="display:none;">
+    <h3 class="pte-feedback-title">PTE-style AI Feedback</h3>
 
-  <!-- Feedback panel (hidden until first score) -->
-  <div id="pte-feedback" style="display:none; margin-top: 16px;">
-    <h3>PTE-style AI Feedback</h3>
+    <!-- 3-criterion summary + explainer -->
+    <div class="pte-feedback-grid">
+      <div class="pte-feedback-card">
+        <h4 class="pte-feedback-card-title">Summary scores</h4>
+        <table class="pte-summary-table">
+          <tr><th>Criterion</th><th>Score (0–90)</th></tr>
+          <tr>
+            <td>Content</td>
+            <td id="pte-summary-content">–</td>
+          </tr>
+          <tr>
+            <td>Oral fluency</td>
+            <td id="pte-summary-fluency-main">–</td>
+          </tr>
+          <tr>
+            <td>Pronunciation</td>
+            <td id="pte-summary-pron-main">–</td>
+          </tr>
+        </table>
+      </div>
 
-    <!-- PTE 3-criterion summary -->
-    <table class="pte-summary-table" style="margin-bottom: 10px;">
-      <tr><th>Criterion</th><th>Score (0–90)</th></tr>
-      <tr>
-        <td>Content</td>
-        <td id="pte-summary-content">–</td>
-      </tr>
-      <tr>
-        <td>Oral fluency</td>
-        <td id="pte-summary-fluency-main">–</td>
-      </tr>
-      <tr>
-        <td>Pronunciation</td>
-        <td id="pte-summary-pron-main">–</td>
-      </tr>
-    </table>
-
-    <!-- Short explanation of PTE scoring -->
-    <div class="pte-explainer" style="font-size: 0.9em; margin-bottom: 14px;">
-      <p><strong>PTE Read Aloud is scored on three criteria:</strong> content, oral fluency, and pronunciation.</p>
-      <ul>
-        <li><strong>Content</strong>: You are rewarded for reading the text exactly as written. Omitting, adding, or replacing words lowers this score.</li>
-        <li><strong>Oral fluency</strong>: Measures how smooth and natural your speech is. Hesitations, repetitions, and false starts reduce this score.</li>
-        <li><strong>Pronunciation</strong>: Measures how clear and understandable your speech is to a native speaker. You don’t need a native accent, but your speech must be easy to understand.</li>
-      </ul>
+      <div class="pte-feedback-card">
+        <h4 class="pte-feedback-card-title">How this is scored</h4>
+        <div class="pte-explainer">
+          <p><strong>PTE speaking is scored on three criteria:</strong> content, oral fluency, and pronunciation.</p>
+          <ul>
+            <li><strong>Content</strong>: How well your answer matches the prompt or reference.</li>
+            <li><strong>Oral fluency</strong>: How smooth and natural your speech is.</li>
+            <li><strong>Pronunciation</strong>: How clearly you can be understood.</li>
+          </ul>
+        </div>
+      </div>
     </div>
 
     <!-- Detailed metrics from backend -->
-    <h4>Detailed metrics</h4>
-    <table class="pte-summary-table" style="margin-bottom: 10px;">
-      <tr><th>Metric</th><th>Score</th></tr>
-      <tr><td>Pronunciation (overall)</td><td id="pte-summary-pron">–</td></tr>
-      <tr><td>Accuracy</td><td id="pte-summary-accuracy">–</td></tr>
-      <tr><td>Fluency</td><td id="pte-summary-fluency">–</td></tr>
-      <tr><td>Prosody</td><td id="pte-summary-prosody">–</td></tr>
-      <tr><td>Completeness</td><td id="pte-summary-completeness">–</td></tr>
-    </table>
+    <div class="pte-section">
+      <h4>Detailed metrics</h4>
+      <table class="pte-summary-table">
+        <tr><th>Metric</th><th>Score</th></tr>
+        <tr><td>Pronunciation (overall)</td><td id="pte-summary-pron">–</td></tr>
+        <tr><td>Accuracy</td><td id="pte-summary-accuracy">–</td></tr>
+        <tr><td>Fluency</td><td id="pte-summary-fluency">–</td></tr>
+        <tr><td>Prosody</td><td id="pte-summary-prosody">–</td></tr>
+        <tr><td>Completeness</td><td id="pte-summary-completeness">–</td></tr>
+      </table>
+    </div>
 
     <!-- Word-level feedback -->
-    <h4>Word-by-word feedback</h4>
-    <table id="pte-words-table" class="pte-summary-table">
-      <thead>
-        <tr>
-          <th>Word</th>
-          <th>Accuracy</th>
-          <th>Error type</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Filled by JS -->
-      </tbody>
-    </table>
+    <div class="pte-section">
+      <h4>Word-by-word feedback</h4>
+      <div class="pte-words-table-wrapper">
+        <table id="pte-words-table" class="pte-summary-table">
+          <thead>
+            <tr>
+              <th>Word</th>
+              <th>Accuracy</th>
+              <th>Error type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Filled by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
