@@ -81,7 +81,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     display_name = String(
         display_name="Component title",
-        default="PTE Recorded Answer (Practice)",
+        default="PTE Speaking Block v1.2",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -98,7 +98,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     reference_text = String(
         display_name="Reference text / expected answer",
-        default="Globalization has significantly changed the modern economy.",
+        default="Assessment of spoken English is an important part of language learning.",
         scope=Scope.content,
         help=(
             "Text the learner should read aloud, or a short reference "
@@ -269,17 +269,27 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         if not audio_base64:
             return {"status": "error", "message": "No audio data received."}
 
-        payload = {
-            "reference_text": self.reference_text or "",
-            "audio_base64": audio_base64,
-            # Backend does NOT currently care about practice vs exam.
-            # If you later need it:
-            # "mode": self.mode,
-        }
+        # Decide which endpoint + payload to use
+        endpoint_kind = (getattr(self, "endpoint_kind", "") or "").lower()
+
+        if endpoint_kind == "speaking":
+            # Speaking endpoint expects 'topic' + 'audio_base64'
+            api_url = getattr(self, "speaking_api_url", "") or self.api_url
+            payload = {
+                "topic": self.reference_text or "",
+                "audio_base64": audio_base64,
+            }
+        else:
+            # Default/read-aloud endpoint expects 'reference_text' + 'audio_base64'
+            api_url = self.api_url
+            payload = {
+                "reference_text": self.reference_text or "",
+                "audio_base64": audio_base64,
+            }
 
         # --- Call external API ------------------------------------------------
         try:
-            resp = requests.post(self.api_endpoint_url, json=payload, timeout=20)
+            resp = requests.post(api_url, json=payload, timeout=20)
             status_code = resp.status_code
             resp.raise_for_status()
         except Exception as exc:
@@ -302,8 +312,26 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
         feedback = {}
         pron_score = 0.0
 
-        # --- Case A: flat PTE-style metrics ----------------------------------
-        if any(
+        # --- Case 0: new 'pronunciation' summary block (speaking endpoint) ----
+        pron_summary = result.get("pronunciation")
+        if isinstance(pron_summary, dict) and any(
+            k in pron_summary
+            for k in ("pron_score", "accuracy", "fluency", "prosody", "completeness")
+        ):
+            feedback = {
+                "pron_score": pron_summary.get("pron_score"),
+                "accuracy": pron_summary.get("accuracy"),
+                "fluency": pron_summary.get("fluency"),
+                "prosody": pron_summary.get("prosody"),
+                "completeness": pron_summary.get("completeness"),
+                "words": result.get("words") or [],
+                "topic": result.get("topic"),
+                "transcript": result.get("transcript"),
+            }
+            pron_score = feedback.get("pron_score") or 0.0
+
+        # --- Case A: flat PTE-style metrics on the root -----------------------
+        elif any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
         ):
@@ -314,10 +342,11 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
                 "prosody": result.get("prosody"),
                 "completeness": result.get("completeness"),
                 "words": result.get("words") or [],
+                "transcript": result.get("transcript"),
             }
             pron_score = feedback.get("pron_score") or 0.0
 
-        # --- Case B: older wrapped shape -------------------------------------
+        # --- Case B: older wrapped shape --------------------------------------
         else:
             api_status = result.get("status")
             if api_status not in (None, "ok"):
@@ -338,6 +367,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
                 "prosody": inner_fb.get("prosody"),
                 "completeness": inner_fb.get("completeness"),
                 "words": inner_fb.get("words") or result.get("words") or [],
+                "transcript": inner_fb.get("transcript") or result.get("transcript"),
             }
             if "score" in result:
                 pron_score = result["score"]
@@ -358,6 +388,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             "score": self.student_score,
             "feedback": feedback,
         }
+
 
     # ----- Grading hooks ------------------------------------------------------
 

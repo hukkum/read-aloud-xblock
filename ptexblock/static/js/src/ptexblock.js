@@ -419,7 +419,17 @@ function PTEXBlock(runtime, element, data) {
                 $element.find('#pte-summary-completeness').text(
                     (typeof comp === "number") ? comp.toFixed(1) : '–'
                 );
+                // 🔹 NEW: Recognized transcript
+                var transcriptText = fb.transcript || response.transcript || "";
+                var $transcriptEl = $element.find('#pte-transcript');
 
+                if ($transcriptEl.length) {
+                    if (transcriptText) {
+                        $transcriptEl.text(transcriptText);
+                    } else {
+                        $transcriptEl.text('–');
+                    }
+                }
                 // Word-level feedback
                 $wordsBody.empty();
                 if (Array.isArray(fb.words)) {
