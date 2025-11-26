@@ -80,8 +80,8 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
     # ----- Instructor / author settings (Studio "Settings" form) -------------
 
     display_name = String(
-        display_name="Component title",
-        default="PTE Speaking Block v1.2",
+        display_name="Recorder",
+        default="PTE Speaking Block v1.4",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -334,23 +334,22 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             k in pron_summary
             for k in ("pron_score", "accuracy", "fluency", "prosody", "completeness")
         ):
-            # Raw 0–100 scores from engine
+            # Raw 0–100 scores from engine (speaking endpoint)
             pron_score_raw   = pron_summary.get("pron_score")
             accuracy_raw     = pron_summary.get("accuracy")
             fluency_raw      = pron_summary.get("fluency")
             prosody_raw      = pron_summary.get("prosody")
             completeness_raw = pron_summary.get("completeness")
 
-            # UI-facing PTE 0–90 scores
             feedback = {
-                # PTE-scale values for UI
+                # PTE-scale values for UI (0–90)
                 "pron_score":   self.to_pte90(pron_score_raw),
                 "accuracy":     self.to_pte90(accuracy_raw),
                 "fluency":      self.to_pte90(fluency_raw),
                 "prosody":      self.to_pte90(prosody_raw),
                 "completeness": self.to_pte90(completeness_raw),
 
-                # Raw engine values (0–100) for analytics
+                # Raw engine values (0–100) for analytics/debug
                 "pron_score_raw":   pron_score_raw,
                 "accuracy_raw":     accuracy_raw,
                 "fluency_raw":      fluency_raw,
@@ -362,24 +361,61 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
                 "topic":      result.get("topic"),
                 "transcript": result.get("transcript"),
             }
-
             pron_score = feedback.get("pron_score") or 0.0
 
-        # --- Case A: flat PTE-style metrics on the root -----------------------
+        # --- Case A: flat metrics on the root (read-aloud / legacy) ----------
         elif any(
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
         ):
-            # Assume this legacy / read-aloud endpoint already returns PTE-scale scores.
-            feedback = {
-                "pron_score":  result.get("pron_score"),
-                "accuracy":    result.get("accuracy"),
-                "fluency":     result.get("fluency"),
-                "prosody":     result.get("prosody"),
-                "completeness": result.get("completeness"),
-                "words":       result.get("words") or [],
-                "transcript":  result.get("transcript"),
-            }
+            pron_raw   = result.get("pron_score")
+            acc_raw    = result.get("accuracy")
+            flu_raw    = result.get("fluency")
+            pro_raw    = result.get("prosody")
+            comp_raw   = result.get("completeness")
+
+            # Decide if these look like 0–100 engine scores (need scaling)
+            numeric_vals = [
+                v for v in (pron_raw, acc_raw, flu_raw, pro_raw, comp_raw)
+                if isinstance(v, (int, float))
+            ]
+            needs_scale = any(v > 90.0 for v in numeric_vals)
+
+            if needs_scale:
+                # Scale to PTE 0–90 but keep raw for debugging
+                pron = self.to_pte90(pron_raw)
+                acc  = self.to_pte90(acc_raw)
+                flu  = self.to_pte90(flu_raw)
+                pro  = self.to_pte90(pro_raw)
+                comp = self.to_pte90(comp_raw)
+                feedback = {
+                    "pron_score":   pron,
+                    "accuracy":     acc,
+                    "fluency":      flu,
+                    "prosody":      pro,
+                    "completeness": comp,
+
+                    "pron_score_raw":   pron_raw,
+                    "accuracy_raw":     acc_raw,
+                    "fluency_raw":      flu_raw,
+                    "prosody_raw":      pro_raw,
+                    "completeness_raw": comp_raw,
+
+                    "words":      result.get("words") or [],
+                    "transcript": result.get("transcript"),
+                }
+            else:
+                # Already PTE-style scores, just pass through
+                feedback = {
+                    "pron_score":   pron_raw,
+                    "accuracy":     acc_raw,
+                    "fluency":      flu_raw,
+                    "prosody":      pro_raw,
+                    "completeness": comp_raw,
+                    "words":        result.get("words") or [],
+                    "transcript":   result.get("transcript"),
+                }
+
             pron_score = feedback.get("pron_score") or 0.0
 
         # --- Case B: older wrapped shape --------------------------------------
@@ -396,19 +432,42 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
                 }
 
             inner_fb = result.get("feedback") or {}
+            pron_raw = inner_fb.get("pron_score")
+            acc_raw  = inner_fb.get("accuracy")
+            flu_raw  = inner_fb.get("fluency")
+            pro_raw  = inner_fb.get("prosody")
+            comp_raw = inner_fb.get("completeness")
+
+            numeric_vals = [
+                v for v in (pron_raw, acc_raw, flu_raw, pro_raw, comp_raw)
+                if isinstance(v, (int, float))
+            ]
+            needs_scale = any(v > 90.0 for v in numeric_vals)
+
+            if needs_scale:
+                pron = self.to_pte90(pron_raw)
+                acc  = self.to_pte90(acc_raw)
+                flu  = self.to_pte90(flu_raw)
+                pro  = self.to_pte90(pro_raw)
+                comp = self.to_pte90(comp_raw)
+            else:
+                pron, acc, flu, pro, comp = pron_raw, acc_raw, flu_raw, pro_raw, comp_raw
+
             feedback = {
-                "pron_score":  inner_fb.get("pron_score"),
-                "accuracy":    inner_fb.get("accuracy"),
-                "fluency":     inner_fb.get("fluency"),
-                "prosody":     inner_fb.get("prosody"),
-                "completeness": inner_fb.get("completeness"),
+                "pron_score":   pron,
+                "accuracy":     acc,
+                "fluency":      flu,
+                "prosody":      pro,
+                "completeness": comp,
                 "words":        inner_fb.get("words") or result.get("words") or [],
                 "transcript":   inner_fb.get("transcript") or result.get("transcript"),
             }
+
             if "score" in result:
                 pron_score = result["score"]
             else:
                 pron_score = feedback.get("pron_score") or 0.0
+
 
         # --- Persist into student state --------------------------------------
         if isinstance(pron_score, (int, float)):
