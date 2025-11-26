@@ -482,7 +482,7 @@ function PTEXBlock(runtime, element, data) {
                         var $row = $('<tr></tr>');
                         $('<td></td>').text(w.word || '').appendTo($row);
                         $('<td></td>').text(
-                            (typeof w.accuracy === "number") ? w.accuracy : ''
+                            (typeof w.accuracy === "number") ? w.accuracy.toFixed(0) + '%' : ''
                         ).appendTo($row);
                         $('<td></td>').text(w.error || '').appendTo($row);
                         $wordsBody.append($row);

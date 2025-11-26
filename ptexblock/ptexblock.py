@@ -124,9 +124,9 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     endpoint_kind = String(
         display_name="Endpoint kind",
-        default="read_aloud",  # or "speaking"
+        default="read-aloud",  # or "speaking"
         scope=Scope.settings,
-        help="Which backend endpoint this recorder uses: 'read_aloud' or 'speaking'.",
+        help="Which backend endpoint this recorder uses: 'read-aloud' or 'speaking'.",
     )
 
     weight = Float(
@@ -150,7 +150,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     preroll_delay = Integer(
         display_name="Prep time (seconds)",
-        default=3,
+        default=5,
         scope=Scope.settings,
         help="Countdown before recording starts.",
     )
@@ -259,6 +259,22 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     # ----- JSON handler: called from JS after recording ----------------------
 
+    @staticmethod
+    def to_pte90(val):
+        """
+        Map a 0–100 engine score to PTE-style 0–90.
+        Keeps None if input is None or invalid.
+        """
+        if val is None:
+            return None
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return None
+        # Clamp to [0, 100], then scale
+        v = max(0.0, min(100.0, v))
+        return round(v * 0.9, 1)
+
     @XBlock.json_handler
     def submit_audio(self, data, suffix=""):
         """
@@ -318,16 +334,35 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             k in pron_summary
             for k in ("pron_score", "accuracy", "fluency", "prosody", "completeness")
         ):
+            # Raw 0–100 scores from engine
+            pron_score_raw   = pron_summary.get("pron_score")
+            accuracy_raw     = pron_summary.get("accuracy")
+            fluency_raw      = pron_summary.get("fluency")
+            prosody_raw      = pron_summary.get("prosody")
+            completeness_raw = pron_summary.get("completeness")
+
+            # UI-facing PTE 0–90 scores
             feedback = {
-                "pron_score": pron_summary.get("pron_score"),
-                "accuracy": pron_summary.get("accuracy"),
-                "fluency": pron_summary.get("fluency"),
-                "prosody": pron_summary.get("prosody"),
-                "completeness": pron_summary.get("completeness"),
-                "words": result.get("words") or [],
-                "topic": result.get("topic"),
+                # PTE-scale values for UI
+                "pron_score":   self.to_pte90(pron_score_raw),
+                "accuracy":     self.to_pte90(accuracy_raw),
+                "fluency":      self.to_pte90(fluency_raw),
+                "prosody":      self.to_pte90(prosody_raw),
+                "completeness": self.to_pte90(completeness_raw),
+
+                # Raw engine values (0–100) for analytics
+                "pron_score_raw":   pron_score_raw,
+                "accuracy_raw":     accuracy_raw,
+                "fluency_raw":      fluency_raw,
+                "prosody_raw":      prosody_raw,
+                "completeness_raw": completeness_raw,
+
+                # Extra info
+                "words":      result.get("words") or [],
+                "topic":      result.get("topic"),
                 "transcript": result.get("transcript"),
             }
+
             pron_score = feedback.get("pron_score") or 0.0
 
         # --- Case A: flat PTE-style metrics on the root -----------------------
@@ -335,14 +370,15 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
             key in result
             for key in ("pron_score", "accuracy", "fluency", "prosody", "completeness", "words")
         ):
+            # Assume this legacy / read-aloud endpoint already returns PTE-scale scores.
             feedback = {
-                "pron_score": result.get("pron_score"),
-                "accuracy": result.get("accuracy"),
-                "fluency": result.get("fluency"),
-                "prosody": result.get("prosody"),
+                "pron_score":  result.get("pron_score"),
+                "accuracy":    result.get("accuracy"),
+                "fluency":     result.get("fluency"),
+                "prosody":     result.get("prosody"),
                 "completeness": result.get("completeness"),
-                "words": result.get("words") or [],
-                "transcript": result.get("transcript"),
+                "words":       result.get("words") or [],
+                "transcript":  result.get("transcript"),
             }
             pron_score = feedback.get("pron_score") or 0.0
 
@@ -361,13 +397,13 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
             inner_fb = result.get("feedback") or {}
             feedback = {
-                "pron_score": inner_fb.get("pron_score"),
-                "accuracy": inner_fb.get("accuracy"),
-                "fluency": inner_fb.get("fluency"),
-                "prosody": inner_fb.get("prosody"),
+                "pron_score":  inner_fb.get("pron_score"),
+                "accuracy":    inner_fb.get("accuracy"),
+                "fluency":     inner_fb.get("fluency"),
+                "prosody":     inner_fb.get("prosody"),
                 "completeness": inner_fb.get("completeness"),
-                "words": inner_fb.get("words") or result.get("words") or [],
-                "transcript": inner_fb.get("transcript") or result.get("transcript"),
+                "words":        inner_fb.get("words") or result.get("words") or [],
+                "transcript":   inner_fb.get("transcript") or result.get("transcript"),
             }
             if "score" in result:
                 pron_score = result["score"]
