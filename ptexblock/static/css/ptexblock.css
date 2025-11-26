@@ -307,3 +307,88 @@
         flex-wrap: wrap;
     }
 }
+
+
+/* ===============================
+   PTE Recorder – Exam-Friendly Tweaks
+   (Overrides for better visibility & timer awareness)
+   =============================== */
+
+/* Slightly larger default font for everything in the block */
+.pte-container {
+    font-size: 1rem; /* ~16px base */
+}
+
+/* Make card title more like an exam section heading */
+.pte-recorder-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* Timer / status line: bigger + stronger */
+.pte-status-line {
+    font-size: 1rem;       /* was 0.875rem */
+    font-weight: 500;
+}
+
+/* Highlight the dynamic timer text (we’re putting countdown + seconds here) */
+.pte-status-message {
+    color: var(--pte-text-main);
+}
+
+/* Make any <strong> inside the status clearly stand out
+   (e.g., countdown, "Recording… 25 seconds left") */
+.pte-status-message strong {
+    color: var(--pte-primary-dark);
+    font-weight: 700;
+}
+
+/* Progress bar: slightly thicker for visibility */
+.pte-progress-bar {
+    height: 10px;          /* was 8px */
+}
+
+/* Buttons: a bit larger for test UX */
+.pte-start,
+.pte-stop {
+    padding: 8px 16px;     /* was 6px 14px */
+    font-size: 0.95rem;    /* was 0.875rem */
+}
+
+/* Last score card text a bit bigger */
+.pte-last-score-label {
+    font-size: 0.95rem;    /* was 0.875rem */
+}
+
+.pte-last-score-value {
+    font-size: 1rem;       /* was 0.95rem */
+}
+
+/* Feedback panels – easier to read */
+.pte-feedback-title {
+    font-size: 1.05rem;
+}
+
+/* Explanation text slightly larger but still “muted” */
+.pte-explainer {
+    font-size: 0.9rem;     /* was 0.82rem */
+}
+
+/* Tables: readability bump */
+.pte-summary-table,
+#pte-words-table {
+    font-size: 0.9rem;     /* was 0.82rem */
+}
+
+/* Progress “running” glow a bit more obvious when timer is active */
+.pte-progress-running .pte-progress-bar-inner {
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+/* Optional: slightly more rounded, Open edX-ish feel */
+.pte-recorder-card,
+.pte-feedback-panel,
+.pte-feedback-card,
+.pte-last-score-card {
+    border-radius: 10px;
+}

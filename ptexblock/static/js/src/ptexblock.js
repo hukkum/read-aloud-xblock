@@ -15,9 +15,7 @@ function PTEXBlock(runtime, element, data) {
     var $progressBar   = $element.find('.pte-progress-bar');
     var $progressInner = $element.find('.pte-progress-bar-inner');
 
-    // ----- Config: primary source is JS data from initialize_js -----
-    // data = { mode, preroll_delay, recording_limit, max_attempts }
-
+    // ----- Config: from initialize_js -----
     var mode = (data && data.mode ? data.mode : 'practice').toString().toLowerCase();
 
     var preroll        = parseInt(data && data.preroll_delay, 10);
@@ -66,9 +64,42 @@ function PTEXBlock(runtime, element, data) {
     var isPrepping = false;
     var attempts = 0;
 
-    // Progress bookkeeping
-    var totalDuration = Math.max(1, preroll + recordingLimit); // seconds
+    // Progress bookkeeping (per phase)
+    var totalDuration = 0;   // seconds in current phase (prep or recording)
     var elapsed = 0;
+
+    // --- Beep helper ---------------------------------------------------------
+    var audioContext = null;
+    function playBeep() {
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) {
+                return;
+            }
+            if (!audioContext) {
+                audioContext = new Ctx();
+            }
+
+            var osc = audioContext.createOscillator();
+            var gain = audioContext.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.value = 880; // nice short beep
+
+            var now = audioContext.currentTime;
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.exponentialRampToValueAtTime(0.2, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.21);
+        } catch (e) {
+            console.warn("Beep failed:", e);
+        }
+    }
 
     function setStatus(text) {
         // Status message only (label "Current Status:" is in HTML)
@@ -86,10 +117,6 @@ function PTEXBlock(runtime, element, data) {
     }
 
     // --- Progress helpers ----------------------------------------------------
-
-    function recalcTotalDuration() {
-        totalDuration = Math.max(1, preroll + recordingLimit);
-    }
 
     function setProgress(percent) {
         if (!$progressInner.length) {
@@ -111,8 +138,17 @@ function PTEXBlock(runtime, element, data) {
         }
     }
 
-    function startProgress() {
-        recalcTotalDuration();
+    // Prep phase: 0 → 100 over `preroll`
+    function startPrepProgress() {
+        totalDuration = Math.max(1, preroll);
+        elapsed = 0;
+        setProgress(0);
+        setProgressRunning(true);
+    }
+
+    // Recording phase: 0 → 100 over `recordingLimit`
+    function startRecordingProgress() {
+        totalDuration = Math.max(1, recordingLimit);
         elapsed = 0;
         setProgress(0);
         setProgressRunning(true);
@@ -194,6 +230,7 @@ function PTEXBlock(runtime, element, data) {
 
                 mediaRecorder.onstop = function () {
                     clearMainTimer();
+                    playBeep();  // 🔔 beep at end of recording
 
                     var blob = new Blob(recordedChunks, { type: 'audio/webm' });
                     var reader = new FileReader();
@@ -211,10 +248,14 @@ function PTEXBlock(runtime, element, data) {
                     }
                 };
 
+                // Start recording
+                startRecordingProgress();        // separate phase 0 → 100
                 mediaRecorder.start();
+                playBeep();                      // 🔔 beep at start of recording
+
                 $startBtn.prop('disabled', true);
                 $stopBtn.prop('disabled', false);
-                setStatus("Recording...");
+                setStatus("Recording… " + recordingLimit + " seconds left.");
 
                 // Start main timer when recording actually starts
                 clearMainTimer();
@@ -222,6 +263,10 @@ function PTEXBlock(runtime, element, data) {
                 mainInterval = window.setInterval(function () {
                     remaining -= 1;
                     incrementProgress();
+
+                    if (remaining > 0) {
+                        setStatus("Recording… " + remaining + " seconds left.");
+                    }
 
                     if (remaining <= 0) {
                         clearMainTimer();
@@ -250,9 +295,9 @@ function PTEXBlock(runtime, element, data) {
         $stopBtn.prop('disabled', true);
 
         if (source === 'auto') {
-            setStatus("Time is up. Uploading & scoring your answer...");
+            setStatus("Time is up. Uploading & scoring your answer…");
         } else {
-            setStatus("Uploading & scoring your answer...");
+            setStatus("Uploading & scoring your answer…");
         }
 
         finishProgress();
@@ -288,12 +333,9 @@ function PTEXBlock(runtime, element, data) {
             return;
         }
 
-        // Start unified progress bar for prep + recording
-        startProgress();
-
         // If no prep delay, start recording immediately
         if (!preroll || preroll <= 0) {
-            setStatus("Recording...");
+            setStatus("Preparing to record…");
             startRecording();
             return;
         }
@@ -304,7 +346,8 @@ function PTEXBlock(runtime, element, data) {
         $stopBtn.prop('disabled', true);
 
         var remaining = preroll;
-        setStatus("Beginning in " + remaining + " seconds...");
+        startPrepProgress();
+        setStatus("Beginning in " + remaining + " seconds…");
 
         clearPrepTimer();
         prepInterval = window.setInterval(function () {
@@ -314,12 +357,12 @@ function PTEXBlock(runtime, element, data) {
             if (remaining <= 0) {
                 clearPrepTimer();
                 isPrepping = false;
-                setStatus("Recording...");
+                setStatus("Recording… " + recordingLimit + " seconds left.");
                 startRecording();
                 return;
             }
 
-            setStatus("Beginning in " + remaining + " seconds...");
+            setStatus("Beginning in " + remaining + " seconds…");
         }, 1000);
     }
 
@@ -419,7 +462,8 @@ function PTEXBlock(runtime, element, data) {
                 $element.find('#pte-summary-completeness').text(
                     (typeof comp === "number") ? comp.toFixed(1) : '–'
                 );
-                // 🔹 NEW: Recognized transcript
+
+                // Recognized transcript
                 var transcriptText = fb.transcript || response.transcript || "";
                 var $transcriptEl = $element.find('#pte-transcript');
 
@@ -430,6 +474,7 @@ function PTEXBlock(runtime, element, data) {
                         $transcriptEl.text('–');
                     }
                 }
+
                 // Word-level feedback
                 $wordsBody.empty();
                 if (Array.isArray(fb.words)) {
@@ -469,7 +514,8 @@ function PTEXBlock(runtime, element, data) {
     }
 
     // Reset progress and status at load
-    recalcTotalDuration();
+    totalDuration = 0;
+    elapsed = 0;
     setProgress(0);
     setProgressRunning(false);
     setStatus('Click <strong>“Start”</strong> to begin. You will see a countdown before recording starts.');
