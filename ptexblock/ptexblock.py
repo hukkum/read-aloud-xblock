@@ -54,11 +54,41 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
       - self.max_attempts       (practice only)
     """
 
-    icon_class = "problem"     # Shows as a "problem" in Studio
-    has_score = True           # LMS knows this block can produce a score
-
     # Tell Studio that we have an author_view it should call in preview.
     has_author_view = True
+
+    has_score = True
+    icon_class = "problem"
+
+    # How many points in the gradebook this problem is worth
+    weight = Float(
+        default=1.0,
+        scope=Scope.settings,
+        help="Problem weight (points) for grading.",
+    )
+
+    def max_score(self):
+        """
+        Maximum score this problem contributes to the gradebook.
+        """
+        return float(self.weight or 1.0)
+
+    def calculate_score(self):
+        """
+        Map 0–90 pronunciation score onto 0–weight for LMS gradebook.
+        """
+        raw = float(self.student_score or 0.0)   # 0–90 PTE style
+        # scale to 0–weight
+        return round((raw / 90.0) * self.max_score(), 3)
+
+    def get_score(self):
+        """
+        Optional but helpful: lets the LMS query current grade.
+        """
+        return {
+            "value": self.calculate_score(),
+            "max_value": self.max_score(),
+        }
 
     # Fields that Studio should make editable in the (legacy) editor.
     editable_fields = (
@@ -81,7 +111,7 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
     display_name = String(
         display_name="Recorder",
-        default="PTE Speaking Block v1.4",
+        default="PTE Speaking Block v1.5",
         scope=Scope.settings,
         help="Title shown to learners and in Studio.",
     )
@@ -471,31 +501,31 @@ class PTEXBlock(StudioEditableXBlockMixin, XBlock):
 
         # --- Persist into student state --------------------------------------
         if isinstance(pron_score, (int, float)):
-            self.student_score = float(pron_score)
+            self.student_score = float(pron_score)   # 0–90 PTE-style
         else:
             self.student_score = 0.0
 
         self.student_feedback = json.dumps(feedback)
         self.student_words = json.dumps(feedback.get("words") or [])
 
+        # --- Publish grade event so Open edX records it ----------------------
+        grade_value = self.calculate_score()   # 0–weight
+        max_value = self.max_score()
+
+        # This is the critical piece for grading:
+        self.runtime.publish(self, "grade", {
+            "value": grade_value,
+            "max_value": max_value,
+        })
+
+        # Optionally return both raw PTE score and grade-scaled value to the UI
         return {
             "status": "ok",
-            "score": self.student_score,
+            "score": self.student_score,   # 0–90 PTE-style pronunciation score
+            "grade": grade_value,          # 0–weight, what the gradebook stores
+            "max_score": max_value,
             "feedback": feedback,
         }
-
-
-    # ----- Grading hooks ------------------------------------------------------
-
-    def max_score(self):
-        return float(self.weight or 1.0)
-
-    def calculate_score(self):
-        """
-        Map 0–90 pronunciation score onto 0–weight for LMS gradebook.
-        """
-        raw = float(self.student_score or 0.0)
-        return (raw / 90.0) * self.max_score()
 
     # ----- Workbench scenarios -----------------------------------------------
 

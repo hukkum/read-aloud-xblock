@@ -11,8 +11,8 @@ def package_data(pkg, roots):
 
 setup(
     name='ptexblock-xblock',
-    version='1.4.0',
-    description='Speaking PTE v1.4',
+    version='1.5.0',
+    description='Speaking PTE v1.5',
     packages=['ptexblock'],
     entry_points={
         'xblock.v1': [
